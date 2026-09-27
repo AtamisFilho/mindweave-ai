@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
 from app.api.v1 import endpoints_ai
 from app.core.config import settings
 from app.core.errors import AIProviderError

@@ -9,6 +9,10 @@ venv/
 .venv/
 env/
 
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+
 # Variáveis de ambiente (NUNCA commitar; use .env.example como modelo)
 .env
 .env.*

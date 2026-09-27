@@ -10,9 +10,12 @@ Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa
 - [x] **Logging** ✅ v0.2 — `logging` estruturado com metadados (provider/model/ancestrais/tamanho); prompts completos apenas com `LOG_PROMPTS=true` (DEBUG); validado que chave e conteúdo de prompt não aparecem no log
 - [x] **Segurança da chave Gemini** ✅ v0.2 — chave no header `x-goog-api-key` (fora da query string)
 - [x] **Toasts de feedback** ✅ v0.2 — sonner (tema dark/light, richColors); erros mapeados por `error_code`; `KEY_NOT_CONFIGURED` com ação "Abrir Configurações" que abre a aba e foca+destaca o campo da chave correta
-- [ ] **Undo/redo** do mapa (Command pattern no store)
-- [ ] **Testes**: pytest para endpoints/serviços (httpx mock), Vitest + Testing Library para store e componentes
-- [ ] **CI**: GitHub Actions (ruff + pytest; eslint + build)
+- [x] **Testes** ✅ v0.2 — 25 backend (pytest + respx: mapeamento de erros, parsing, contexto no prompt, chave no header) · 21 frontend (Vitest + Testing Library: DAG/ciclos/ancestrais no store, markdown do painel) · 4 E2E (Playwright com rotas mockadas: pesquisa+markdown, DAG via "Adicionar Filho", sugestões, sanity drag)
+- [x] **CI** ✅ v0.2 — GitHub Actions com cache pip/npm: backend (ruff + pytest) · frontend (eslint + vitest + build) · E2E (Playwright + artefatos de trace em falha)
+
+### v0.2.5 — Extras (pendências leves da v0.2)
+
+- [ ] **Undo/redo** do mapa (Command pattern no store) — adiado da v0.2 por decisão de escopo
 
 ## v0.3 — Persistência (SQLite)
 

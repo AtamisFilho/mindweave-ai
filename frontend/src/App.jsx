@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { Toaster } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from './store/mindMapStore';

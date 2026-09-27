@@ -5,7 +5,7 @@ import { toast } from 'sonner';
  * `onOpenConfig` é chamado para erros de chave ausente — leva o usuário
  * direto ao campo correto no painel de configurações.
  */
-export const notifyAiError = ({ code, message, provider } = {}, { onOpenConfig } = {}) => {
+export const notifyAiError = ({ code, message } = {}, { onOpenConfig } = {}) => {
   if (code === 'KEY_NOT_CONFIGURED') {
     toast.error('Chave de API necessária', {
       description: message,

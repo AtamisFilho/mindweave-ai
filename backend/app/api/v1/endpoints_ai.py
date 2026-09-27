@@ -1,18 +1,19 @@
 import logging
 
 from fastapi import APIRouter, Body
+
+from app.core.config import settings
+from app.core.errors import AIProviderError, ErrorCode
 from app.models.ai_models import (
+    AIProviderConfig,
+    AIProviderConfigResponse,
     AIResearchRequest,
     AIResearchResponse,
     AISuggestNodesRequest,
     AISuggestNodesResponse,
-    AIProviderConfig,
-    AIProviderConfigResponse,
-    OllamaConfig
+    OllamaConfig,
 )
 from app.services import ai_service
-from app.core.config import settings
-from app.core.errors import AIProviderError, ErrorCode
 
 logger = logging.getLogger("app.api")
 

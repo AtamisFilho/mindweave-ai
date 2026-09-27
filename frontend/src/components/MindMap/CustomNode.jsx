@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from '../../store/mindMapStore';
 import Button from '../UI/Button';
 
-const CustomNode = ({ id, data, selected, type }) => {
+const CustomNode = ({ id, data, selected }) => {
   const { updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode } = useMindMapStore(useShallow((state) => ({
     updateNodeLabel: state.updateNodeLabel,
     performDeepResearch: state.performDeepResearch,

@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import List, Optional
 
 import httpx
 
@@ -8,10 +7,10 @@ from app.core.config import settings
 from app.core.errors import AIProviderError, ErrorCode
 from app.models.ai_models import (
     AIResearchRequest,
-    AISuggestNodesRequest,
     AISuggestedNode,
-    OllamaConfig,
+    AISuggestNodesRequest,
     NodeContext,
+    OllamaConfig,
 )
 
 logger = logging.getLogger("app.ai")
@@ -35,11 +34,11 @@ def set_google_api_key(key: str):
     _GOOGLE_API_KEY = key
 
 
-def get_openai_key() -> Optional[str]:
+def get_openai_key() -> str | None:
     return _OPENAI_API_KEY
 
 
-def get_google_key() -> Optional[str]:
+def get_google_key() -> str | None:
     return _GOOGLE_API_KEY
 
 
@@ -70,7 +69,7 @@ def _log_request(provider: str, model: str, prompt: str, ancestor_count: int) ->
         logger.debug("Prompt (%s/%s): %s", provider, model, prompt)
 
 
-def _require_key(provider: str, api_key: Optional[str]) -> str:
+def _require_key(provider: str, api_key: str | None) -> str:
     if not api_key:
         raise AIProviderError(
             ErrorCode.KEY_NOT_CONFIGURED,
@@ -129,7 +128,7 @@ def _request_error(provider: str, exc: Exception) -> AIProviderError:
     )
 
 
-def _parse_suggestions(raw: str) -> List[AISuggestedNode]:
+def _parse_suggestions(raw: str) -> list[AISuggestedNode]:
     suggestions = [
         AISuggestedNode(content=line.strip())
         for line in raw.split("\n")
@@ -168,7 +167,7 @@ async def perform_deep_research_ollama(request: AIResearchRequest, config: Ollam
     return await _ollama_generate(prompt, model_to_use, config.baseUrl)
 
 
-async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: OllamaConfig) -> List[AISuggestedNode]:
+async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: OllamaConfig) -> list[AISuggestedNode]:
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else ""
     model_to_use = request.model_name or config.model
@@ -190,7 +189,7 @@ async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: Ollam
 
 
 # --- OpenAI ---
-async def perform_deep_research_openai(request: AIResearchRequest, api_key: Optional[str]) -> str:
+async def perform_deep_research_openai(request: AIResearchRequest, api_key: str | None) -> str:
     key = _require_key("OpenAI", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
@@ -220,7 +219,7 @@ async def perform_deep_research_openai(request: AIResearchRequest, api_key: Opti
     return response.json()["choices"][0]["message"]["content"].strip()
 
 
-async def suggest_new_nodes_openai(request: AISuggestNodesRequest, api_key: Optional[str]) -> List[AISuggestedNode]:
+async def suggest_new_nodes_openai(request: AISuggestNodesRequest, api_key: str | None) -> list[AISuggestedNode]:
     key = _require_key("OpenAI", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
@@ -256,7 +255,7 @@ def _gemini_url(model_to_use: str) -> str:
     return f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent"
 
 
-async def perform_deep_research_google(request: AIResearchRequest, api_key: Optional[str]) -> str:
+async def perform_deep_research_google(request: AIResearchRequest, api_key: str | None) -> str:
     key = _require_key("Google", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
@@ -295,7 +294,7 @@ async def perform_deep_research_google(request: AIResearchRequest, api_key: Opti
     )
 
 
-async def suggest_new_nodes_google(request: AISuggestNodesRequest, api_key: Optional[str]) -> List[AISuggestedNode]:
+async def suggest_new_nodes_google(request: AISuggestNodesRequest, api_key: str | None) -> list[AISuggestedNode]:
     key = _require_key("Google", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."

@@ -17,7 +17,7 @@ import { nanoid } from 'nanoid';
 // --- Hierarquia derivada das arestas (DAG) ---
 // As arestas do React Flow são a fonte única de verdade da hierarquia;
 // data.parentId é apenas cache de posicionamento (pai "principal" mais recente).
-const getAncestorContext = (nodes, edges, nodeId) => {
+export const getAncestorContext = (nodes, edges, nodeId) => {
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const visited = new Set([nodeId]);
   const queue = [];
@@ -139,15 +139,17 @@ const useMindMapStore = create((set, get) => ({
         const parentNode = get().nodes.find(n => n.id === parentNodeId);
         if (parentNode) {
             const childrenCount = get().nodes.filter(n => n.data.parentId === parentNodeId).length;
-            // Basic positioning: directly below, slightly offset horizontally for multiple children
+            // Filhos nascem À DIREITA do pai (largura máx. do nó = 280px): o mapa
+            // cresce horizontalmente e o painel de ações do pai selecionado nunca
+            // cobre o filho (bug de sobreposição que o E2E do Bloco 4 revelou).
             newNodePosition = {
-                x: parentNode.position.x + (childrenCount * 40) - ((get().nodes.filter(n=>n.data.parentId === parentNodeId).length > 0 ? get().nodes.filter(n=>n.data.parentId === parentNodeId).length-1 : 0) * 20),
-                y: parentNode.position.y + 150,
+                x: parentNode.position.x + 300,
+                y: parentNode.position.y + childrenCount * 130,
             };
         } else { // Fallback if parent not found (should not happen ideally)
             newNodePosition = position || { x: Math.random() * 300, y: Math.random() * 300 };
         }
-    } else { 
+    } else {
       newNodePosition = position || { x: Math.random() * 300, y: Math.random() * 300 };
     }
 

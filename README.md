@@ -135,7 +135,7 @@ O frontend estará rodando em um endereço como `http://localhost:5173` (o Vite 
 
 ## Próximos Passos e Melhorias Potenciais
 
-Veja o [ROADMAP.md](ROADMAP.md) para o plano de evolução detalhado (robustez, persistência, IA avançada e escala).
+Veja o [ROADMAP.md](ROADMAP.md) para o plano de evolução detalhado (persistência, IA avançada e escala) e o [CHANGELOG.md](CHANGELOG.md) para o histórico de versões.
 
 ## Licença
 

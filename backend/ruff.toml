@@ -1,0 +1,9 @@
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501", # linhas longas nos prompts de IA são intencionais
+    "B008", # `= Body(...)` em defaults é o padrão idiomático do FastAPI
+]

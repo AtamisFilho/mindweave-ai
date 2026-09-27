@@ -16,7 +16,7 @@ const EmptyState = ({ icon, title, hint }) => (
   </div>
 );
 
-const ResearchEntry = ({ entry, nodeLabel, expanded, onToggle }) => {
+const ResearchEntry = ({ entry, nodeLabel, expanded, onToggle, onLabelClick }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -36,7 +36,11 @@ const ResearchEntry = ({ entry, nodeLabel, expanded, onToggle }) => {
         onClick={onToggle}
         className="w-full flex items-center justify-between gap-2 px-2.5 py-2 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700 text-left"
       >
-        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate">
+        <span
+          className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate"
+          title={onLabelClick ? 'Focar este nó no painel' : undefined}
+          onClick={(e) => { if (onLabelClick) { e.stopPropagation(); onLabelClick(); } }}
+        >
           {nodeLabel}
         </span>
         <span className="text-[10px] text-gray-400 shrink-0">{formatTime(entry.createdAt)}</span>
@@ -161,6 +165,9 @@ const ResearchPanel = () => {
               nodeLabel={viewAll ? labelFor(entry.nodeId) : (panelNodeLabel || labelFor(entry.nodeId))}
               expanded={expandedId === null ? entry.id === entries[0].id : expandedId === entry.id}
               onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+              onLabelClick={viewAll && nodes.some((n) => n.id === entry.nodeId)
+                ? () => { setResearchPanelNode(entry.nodeId); setViewAll(false); setExpandedId(null); }
+                : undefined}
             />
           ))}
           {viewAll && (
