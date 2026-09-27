@@ -4,7 +4,12 @@ import {
   applyEdgeChanges,
   addEdge as rfAddEdge,
 } from '@xyflow/react';
-import { getAIConfig, updateAIConfig as apiUpdateAIConfig, performDeepResearch as apiPerformDeepResearch, suggestNewNodes as apiSuggestNewNodes } from '../services/api'; // Renomeado para evitar conflito
+import {
+  getAIConfig, updateAIConfig as apiUpdateAIConfig,
+  performDeepResearch as apiPerformDeepResearch,
+  suggestNewNodes as apiSuggestNewNodes,
+  extractApiError,
+} from '../services/api'; // Renomeado para evitar conflito
 import { nanoid } from 'nanoid'; 
 
 // --- Hierarquia derivada das arestas (DAG) ---
@@ -69,10 +74,11 @@ const useMindMapStore = create((set, get) => ({
     isOpenAiKeySet: false,
     isGoogleKeySet: false,
   },
-  aiLoading: false, 
+  aiLoading: false,
   aiError: null,
-  researchResult: null, 
-  activePanel: 'nodes', 
+  aiErrorCode: null, // código estável do backend (ex: PROVIDER_TIMEOUT) — consumido por toasts no Bloco 3
+  researchResult: null,
+  activePanel: 'nodes',
 
 
   // --- React Flow specific actions ---
@@ -175,32 +181,34 @@ const useMindMapStore = create((set, get) => ({
   
   // --- AI Configuration actions ---
   fetchAIConfig: async () => {
-    set({ aiLoading: true, aiError: null });
+    set({ aiLoading: true, aiError: null, aiErrorCode: null });
     try {
       const config = await getAIConfig(); // From api.js
       set({ aiConfig: config, aiLoading: false });
     } catch (error) {
-      set({ aiError: error.message || 'Falha ao buscar configuração da IA.', aiLoading: false });
+      const { code, message } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
     }
   },
 
   updateAIConfig: async (newConfig) => {
-    set({ aiLoading: true, aiError: null });
+    set({ aiLoading: true, aiError: null, aiErrorCode: null });
     try {
       const updatedConfig = await apiUpdateAIConfig(newConfig); // From api.js
       set({ aiConfig: updatedConfig, aiLoading: false });
     } catch (error) {
-      set({ aiError: error.message || 'Falha ao atualizar configuração da IA.', aiLoading: false });
-      throw error; 
+      const { code, message } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      throw error;
     }
   },
   
   // --- AI Feature actions ---
   performDeepResearch: async (nodeId) => {
-    set({ aiLoading: true, aiError: null, researchResult: null });
+    set({ aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null });
     const node = get().nodes.find(n => n.id === nodeId);
     if (!node) {
-      set({ aiError: 'Nó não encontrado.', aiLoading: false });
+      set({ aiError: 'Nó não encontrado.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false });
       return;
     }
 
@@ -216,15 +224,16 @@ const useMindMapStore = create((set, get) => ({
       const result = await apiPerformDeepResearch(researchData); // from api.js
       set({ researchResult: {nodeId: result.nodeId, summary: result.researchSummary }, aiLoading: false });
     } catch (error) {
-      set({ aiError: error.detail || error.message || 'Falha na pesquisa profunda.', aiLoading: false });
+      const { code, message } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
     }
   },
 
   suggestNewNodes: async (nodeId) => {
-    set({ aiLoading: true, aiError: null });
+    set({ aiLoading: true, aiError: null, aiErrorCode: null });
     const parentNode = get().nodes.find(n => n.id === nodeId);
     if (!parentNode) {
-      set({ aiError: 'Nó pai não encontrado para sugestões.', aiLoading: false });
+      set({ aiError: 'Nó pai não encontrado para sugestões.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false });
       return;
     }
 
@@ -246,7 +255,8 @@ const useMindMapStore = create((set, get) => ({
       }
       set({ aiLoading: false });
     } catch (error) {
-      set({ aiError: error.detail || error.message || 'Falha ao sugerir novos nós.', aiLoading: false });
+      const { code, message } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
     }
   },
 

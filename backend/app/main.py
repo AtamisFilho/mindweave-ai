@@ -1,8 +1,16 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware # Importar CORSMiddleware
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api.v1 import endpoints_ai
 from app.core.config import settings
+from app.core.errors import AIProviderError
 from app.services import ai_service
+
+logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolvimento
+
+logger = logging.getLogger("app")
 
 app = FastAPI(title="MindWeave AI Backend")
 
@@ -27,13 +35,36 @@ app.add_middleware(
 
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
 
+
+@app.exception_handler(AIProviderError)
+async def ai_provider_error_handler(request: Request, exc: AIProviderError):
+    # Traduz falhas de IA para um JSON estruturado e UI-friendly.
+    # Loga apenas metadados — nunca conteúdo de prompt, corpo do provedor ou chaves.
+    logger.warning(
+        "Falha de IA: error_code=%s provider=%s http=%s",
+        exc.code.value, exc.provider, exc.status_code,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": {
+                "error_code": exc.code.value,
+                "message": exc.message,
+                "provider": exc.provider,
+            }
+        },
+    )
+
+
 @app.get("/")
 async def root():
-    # Log de variáveis de ambiente para depuração (opcional, remova em produção)
-    print(f"OLLAMA_BASE_URL from settings: {settings.OLLAMA_BASE_URL}")
-    print(f"DEFAULT_OLLAMA_MODEL from settings: {settings.DEFAULT_OLLAMA_MODEL}")
-    print(f"OpenAI Key Loaded: {ai_service.is_openai_key_set()}") # Precisa importar ai_service
-    print(f"Google Key Loaded: {ai_service.is_google_key_set()}") # Precisa importar ai_service
+    logger.info(
+        "Config: OLLAMA_BASE_URL=%s DEFAULT_OLLAMA_MODEL=%s openai_key_set=%s google_key_set=%s",
+        settings.OLLAMA_BASE_URL,
+        settings.DEFAULT_OLLAMA_MODEL,
+        ai_service.is_openai_key_set(),
+        ai_service.is_google_key_set(),
+    )
     return {"message": "Bem-vindo ao MindWeave AI Backend!"}
 
 # Para executar localmente:

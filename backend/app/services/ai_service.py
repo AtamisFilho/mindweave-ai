@@ -1,34 +1,51 @@
+import logging
+import os
 from typing import List, Optional
 
 import httpx
+
+from app.core.config import settings
+from app.core.errors import AIProviderError, ErrorCode
 from app.models.ai_models import (
     AIResearchRequest,
     AISuggestNodesRequest,
     AISuggestedNode,
     OllamaConfig,
-    NodeContext
+    NodeContext,
 )
-from app.core.config import settings
-import os # For API keys
+
+logger = logging.getLogger("app.ai")
+
+# Chamadas de IA: 60s no total; conexão aborta em 10s (falha rápida p/ serviço fora do ar)
+_HTTP_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 # --- Gerenciamento de API Keys (Simples - NÃO PARA PRODUÇÃO REAL) ---
 # Em produção, use Vault, AWS/GCP Secret Manager, ou variáveis de ambiente seguras.
-# Estas são "globais" no módulo de serviço por simplicidade neste exemplo.
 _OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-_GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") # Para Gemini (Google Generative AI)
+_GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
 
 def set_openai_api_key(key: str):
     global _OPENAI_API_KEY
     _OPENAI_API_KEY = key
-    # Aqui você poderia persistir a chave de forma segura se necessário
+
 
 def set_google_api_key(key: str):
     global _GOOGLE_API_KEY
     _GOOGLE_API_KEY = key
-    # Aqui você poderia persistir a chave de forma segura
+
+
+def get_openai_key() -> Optional[str]:
+    return _OPENAI_API_KEY
+
+
+def get_google_key() -> Optional[str]:
+    return _GOOGLE_API_KEY
+
 
 def is_openai_key_set() -> bool:
     return bool(_OPENAI_API_KEY)
+
 
 def is_google_key_set() -> bool:
     return bool(_GOOGLE_API_KEY)
@@ -42,31 +59,98 @@ def get_ancestor_context_string(ancestorContext: list[NodeContext]) -> str:
         return ""
     return "; ".join(ctx.content for ctx in ancestorContext)
 
-async def ollama_generate(prompt: str, model: str, base_url: str) -> str:
-    full_response = ""
+
+def _log_request(provider: str, model: str, prompt: str, ancestor_count: int) -> None:
+    """Loga apenas metadados; o conteúdo do prompt só com LOG_PROMPTS=true (DEBUG)."""
+    logger.info(
+        "IA: provider=%s model=%s ancestrais=%d prompt_chars=%d",
+        provider, model, ancestor_count, len(prompt),
+    )
+    if settings.LOG_PROMPTS:
+        logger.debug("Prompt (%s/%s): %s", provider, model, prompt)
+
+
+def _require_key(provider: str, api_key: Optional[str]) -> str:
+    if not api_key:
+        raise AIProviderError(
+            ErrorCode.KEY_NOT_CONFIGURED,
+            f"Chave de API do {provider} não configurada no servidor.",
+            provider,
+            400,
+        )
+    return api_key
+
+
+def _error_from_status(provider: str, status_code: int, body: str) -> AIProviderError:
+    # Chave rejeitada: OpenAI responde 401; Gemini responde 400 com "API key not valid"
+    if status_code in (400, 401, 403) and "api key" in body.lower():
+        return AIProviderError(
+            ErrorCode.PROVIDER_INVALID_KEY,
+            f"O {provider} rejeitou a chave de API (HTTP {status_code}).",
+            provider, 502,
+        )
+    if status_code in (401, 403):
+        return AIProviderError(
+            ErrorCode.PROVIDER_INVALID_KEY,
+            f"O {provider} rejeitou a chave de API (HTTP {status_code}).",
+            provider, 502,
+        )
+    if status_code == 404:
+        return AIProviderError(
+            ErrorCode.MODEL_NOT_FOUND,
+            f"Modelo ou recurso não encontrado no {provider} (HTTP 404). Verifique o nome do modelo.",
+            provider, 502,
+        )
+    if status_code == 429:
+        return AIProviderError(
+            ErrorCode.RATE_LIMIT_EXCEEDED,
+            f"Limite de requisições do {provider} excedido (HTTP 429). Tente novamente em instantes.",
+            provider, 429,
+        )
+    return AIProviderError(
+        ErrorCode.PROVIDER_REQUEST_FAILED,
+        f"O {provider} retornou o status HTTP {status_code}.",
+        provider, 502,
+    )
+
+
+def _request_error(provider: str, exc: Exception) -> AIProviderError:
+    # TimeoutException é subclasse de RequestError: checar ANTES
+    if isinstance(exc, httpx.TimeoutException):
+        return AIProviderError(
+            ErrorCode.PROVIDER_TIMEOUT,
+            f"O {provider} não respondeu a tempo (timeout). Tente novamente.",
+            provider, 504,
+        )
+    return AIProviderError(
+        ErrorCode.PROVIDER_UNREACHABLE,
+        f"Não foi possível conectar ao serviço do {provider}.",
+        provider, 503,
+    )
+
+
+def _parse_suggestions(raw: str) -> List[AISuggestedNode]:
+    suggestions = [
+        AISuggestedNode(content=line.strip())
+        for line in raw.split("\n")
+        if line.strip()
+    ]
+    return suggestions or [AISuggestedNode(content="Nenhuma sugestão gerada.")]
+
+
+# --- Ollama ---
+async def _ollama_generate(prompt: str, model: str, base_url: str) -> str:
+    payload = {"model": model, "prompt": prompt, "stream": False}
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": False 
-            }
-            response = await client.post(f"{base_url}/api/generate", json=payload)
-            response.raise_for_status()
-            response_data = response.json()
-            full_response = response_data.get("response", "").strip()
-            
-    except httpx.RequestError as e:
-        print(f"Error contacting Ollama: {e}")
-        return "Error: Could not connect to Ollama service."
-    except httpx.HTTPStatusError as e:
-        print(f"Ollama API request failed: {e.response.status_code} - {e.response.text}")
-        return f"Error: Ollama request failed with status {e.response.status_code}."
-    except Exception as e:
-        print(f"An unexpected error occurred with Ollama: {e}")
-        return "Error: An unexpected error occurred while processing your request with Ollama."
-    
-    return full_response.strip()
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            response = await client.post(f"{base_url.rstrip('/')}/api/generate", json=payload)
+    except httpx.HTTPError as exc:
+        raise _request_error("Ollama", exc) from exc
+    if response.status_code != 200:
+        logger.debug("Ollama HTTP %s: %s", response.status_code, response.text[:200])
+        raise _error_from_status("Ollama", response.status_code, response.text)
+    return response.json().get("response", "").strip()
+
 
 async def perform_deep_research_ollama(request: AIResearchRequest, config: OllamaConfig) -> str:
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
@@ -80,8 +164,9 @@ async def perform_deep_research_ollama(request: AIResearchRequest, config: Ollam
         f"Não mencione os nós pais explicitamente na sua resposta, mas use-os para entender o sub-tópico em questão.\n"
         f"Resumo da pesquisa:"
     )
-    print(f"--- Ollama Deep Research Prompt (Model: {model_to_use}) ---\n{prompt}\n---------------------------------")
-    return await ollama_generate(prompt, model_to_use, config.baseUrl)
+    _log_request("ollama", model_to_use, prompt, len(request.ancestorContext))
+    return await _ollama_generate(prompt, model_to_use, config.baseUrl)
+
 
 async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: OllamaConfig) -> List[AISuggestedNode]:
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
@@ -99,25 +184,14 @@ async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: Ollam
         f"Sugestão 3\n"
         f"Sugestões:"
     )
-    print(f"--- Ollama Suggest Nodes Prompt (Model: {model_to_use}) ---\n{prompt}\n--------------------------------")
-    raw_suggestions = await ollama_generate(prompt, model_to_use, config.baseUrl)
+    _log_request("ollama", model_to_use, prompt, len(request.ancestorContext))
+    raw_suggestions = await _ollama_generate(prompt, model_to_use, config.baseUrl)
+    return _parse_suggestions(raw_suggestions)
 
-    if "Error:" in raw_suggestions:
-        return [AISuggestedNode(content=raw_suggestions)]
 
-    suggested_nodes = []
-    for line in raw_suggestions.split('\n'):
-        cleaned_line = line.strip()
-        if cleaned_line:
-            suggested_nodes.append(AISuggestedNode(content=cleaned_line))
-    
-    return suggested_nodes if suggested_nodes else [AISuggestedNode(content="Nenhuma sugestão gerada.")]
-
-# --- OpenAI Service Implementation ---
+# --- OpenAI ---
 async def perform_deep_research_openai(request: AIResearchRequest, api_key: Optional[str]) -> str:
-    if not api_key:
-        return "Error: OpenAI API Key não configurada."
-    
+    key = _require_key("OpenAI", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gpt-3.5-turbo"
@@ -132,31 +206,22 @@ async def perform_deep_research_openai(request: AIResearchRequest, api_key: Opti
             f"Resumo da pesquisa:"
         )}
     ]
-    print(f"--- OpenAI Deep Research (Model: {model_to_use}) ---\nUser Content: {messages[1]['content']}\n-----------------------------")
+    _log_request("openai", model_to_use, messages[1]["content"], len(request.ancestorContext))
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            headers = {"Authorization": f"Bearer {api_key}"}
-            payload = {"model": model_to_use, "messages": messages}
-            response = await client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except httpx.RequestError as e:
-        print(f"Error contacting OpenAI: {e}")
-        return "Error: Could not connect to OpenAI service."
-    except httpx.HTTPStatusError as e:
-        print(f"OpenAI API request failed: {e.response.status_code} - {e.response.text}")
-        return f"Error: OpenAI request failed with status {e.response.status_code}."
-    except Exception as e:
-        print(f"An unexpected error occurred with OpenAI: {e}")
-        return "Error: An unexpected error occurred while processing your request with OpenAI."
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            headers = {"Authorization": f"Bearer {key}"}
+            response = await client.post("https://api.openai.com/v1/chat/completions", json={"model": model_to_use, "messages": messages}, headers=headers)
+    except httpx.HTTPError as exc:
+        raise _request_error("OpenAI", exc) from exc
+    if response.status_code != 200:
+        logger.debug("OpenAI HTTP %s: %s", response.status_code, response.text[:200])
+        raise _error_from_status("OpenAI", response.status_code, response.text)
+    return response.json()["choices"][0]["message"]["content"].strip()
 
 
 async def suggest_new_nodes_openai(request: AISuggestNodesRequest, api_key: Optional[str]) -> List[AISuggestedNode]:
-    if not api_key:
-        return [AISuggestedNode(content="Error: OpenAI API Key não configurada.")]
-
+    key = _require_key("OpenAI", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gpt-3.5-turbo"
@@ -170,50 +235,32 @@ async def suggest_new_nodes_openai(request: AISuggestNodesRequest, api_key: Opti
             f"Liste cada sugestão em uma nova linha, sem marcadores ou numeração. Apenas o texto da sugestão."
         )}
     ]
-    print(f"--- OpenAI Suggest Nodes (Model: {model_to_use}) ---\nUser Content: {messages[1]['content']}\n---------------------------")
+    _log_request("openai", model_to_use, messages[1]["content"], len(request.ancestorContext))
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            headers = {"Authorization": f"Bearer {api_key}"}
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            headers = {"Authorization": f"Bearer {key}"}
             payload = {"model": model_to_use, "messages": messages, "max_tokens": 100}
             response = await client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            raw_suggestions = data["choices"][0]["message"]["content"].strip()
-            
-            suggested_nodes = []
-            for line in raw_suggestions.split('\n'):
-                cleaned_line = line.strip()
-                if cleaned_line:
-                    suggested_nodes.append(AISuggestedNode(content=cleaned_line))
-            return suggested_nodes if suggested_nodes else [AISuggestedNode(content="Nenhuma sugestão gerada.")]
+    except httpx.HTTPError as exc:
+        raise _request_error("OpenAI", exc) from exc
+    if response.status_code != 200:
+        logger.debug("OpenAI HTTP %s: %s", response.status_code, response.text[:200])
+        raise _error_from_status("OpenAI", response.status_code, response.text)
+    return _parse_suggestions(response.json()["choices"][0]["message"]["content"].strip())
 
-    except httpx.RequestError as e:
-        print(f"Error contacting OpenAI: {e}")
-        return [AISuggestedNode(content="Error: Could not connect to OpenAI service.")]
-    except httpx.HTTPStatusError as e:
-        print(f"OpenAI API request failed: {e.response.status_code} - {e.response.text}")
-        return [AISuggestedNode(content=f"Error: OpenAI request failed with status {e.response.status_code}.")]
-    except Exception as e:
-        print(f"An unexpected error occurred with OpenAI: {e}")
-        return [AISuggestedNode(content="Error: An unexpected error occurred with OpenAI.")]
 
-# --- Google Gemini Service Implementation ---
+# --- Google Gemini ---
+# A chave vai no header x-goog-api-key (nunca na query string, que vaza em logs de URL)
+def _gemini_url(model_to_use: str) -> str:
+    return f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent"
+
+
 async def perform_deep_research_google(request: AIResearchRequest, api_key: Optional[str]) -> str:
-    if not api_key:
-        return "Error: Google API Key não configurada."
-
-    # Google Generative AI Python SDK (google-generativeai) é preferível, mas vamos usar httpx por consistência.
-    # O endpoint e o formato do payload podem variar dependendo do modelo específico (Gemini Pro, etc.)
-    # Este é um exemplo genérico para Gemini via REST API.
-    # Você precisará ajustar o `model_name` e o endpoint/formato do payload conforme a documentação do Google.
-    
+    key = _require_key("Google", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
-    # O usuário pode especificar um modelo como "gemini-1.5-flash-latest" ou "gemini-pro" etc.
-    model_to_use = request.model_name or "gemini-1.5-flash-latest" 
-    # O endpoint pode variar, verifique a documentação do Google AI Studio / Vertex AI
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent?key={api_key}"
+    model_to_use = request.model_name or "gemini-1.5-flash-latest"
 
     prompt_text = (
         f"Você é um assistente de pesquisa especializado. Por favor, realize uma pesquisa aprofundada sobre o seguinte tópico: '{request.nodeContent}'.\n"
@@ -222,42 +269,37 @@ async def perform_deep_research_google(request: AIResearchRequest, api_key: Opti
         f"Não mencione os nós pais explicitamente na sua resposta, mas use-os para entender o sub-tópico em questão.\n"
         f"Resumo da pesquisa:"
     )
-    print(f"--- Google Gemini Deep Research (Model: {model_to_use}) ---\nPrompt: {prompt_text}\n-----------------------------")
+    _log_request("google", model_to_use, prompt_text, len(request.ancestorContext))
 
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            headers = {"Content-Type": "application/json"}
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            # O formato da resposta do Gemini pode variar. Ajuste conforme necessário.
-            # Exemplo: data['candidates'][0]['content']['parts'][0]['text']
-            if data.get('candidates') and data['candidates'][0].get('content') and data['candidates'][0]['content'].get('parts'):
-                return data['candidates'][0]['content']['parts'][0]['text'].strip()
-            else:
-                print("Google API response format not as expected:", data)
-                return "Error: Formato de resposta inesperado do Google API."
-    except httpx.RequestError as e:
-        print(f"Error contacting Google API: {e}")
-        return "Error: Could not connect to Google API service."
-    except httpx.HTTPStatusError as e:
-        print(f"Google API request failed: {e.response.status_code} - {e.response.text}")
-        error_details = e.response.json().get('error', {}).get('message', e.response.text)
-        return f"Error: Google API request failed with status {e.response.status_code}. Details: {error_details}"
-    except Exception as e:
-        print(f"An unexpected error occurred with Google API: {e}")
-        return "Error: An unexpected error occurred while processing your request with Google API."
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            headers = {"Content-Type": "application/json", "x-goog-api-key": key}
+            response = await client.post(_gemini_url(model_to_use), json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise _request_error("Google", exc) from exc
+    if response.status_code != 200:
+        logger.debug("Gemini HTTP %s: %s", response.status_code, response.text[:200])
+        raise _error_from_status("Google", response.status_code, response.text)
+
+    data = response.json()
+    candidates = data.get("candidates") or []
+    parts = candidates[0].get("content", {}).get("parts") if candidates else None
+    if parts:
+        return parts[0]["text"].strip()
+    logger.debug("Resposta inesperada do Gemini: %s", str(data)[:300])
+    raise AIProviderError(
+        ErrorCode.PROVIDER_REQUEST_FAILED,
+        "O Gemini retornou uma resposta em formato inesperado.",
+        "Google", 502,
+    )
+
 
 async def suggest_new_nodes_google(request: AISuggestNodesRequest, api_key: Optional[str]) -> List[AISuggestedNode]:
-    if not api_key:
-        return [AISuggestedNode(content="Error: Google API Key não configurada.")]
-
+    key = _require_key("Google", api_key)
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
     context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gemini-1.5-flash-latest"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent?key={api_key}"
 
     prompt_text = (
         f"Você é um assistente de brainstorming para mapas mentais. O nó atual é '{request.nodeContent}'.\n"
@@ -265,45 +307,27 @@ async def suggest_new_nodes_google(request: AISuggestNodesRequest, api_key: Opti
         f"Com base neste nó e seu contexto, sugira até 3-5 novos sub-nós ou nós relacionados que poderiam expandir este mapa mental. "
         f"Liste cada sugestão em uma nova linha, sem marcadores ou numeração. Apenas o texto da sugestão."
     )
-    print(f"--- Google Gemini Suggest Nodes (Model: {model_to_use}) ---\nPrompt: {prompt_text}\n---------------------------")
-    
+    _log_request("google", model_to_use, prompt_text, len(request.ancestorContext))
+
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-    # Configurações de geração para controlar a saída (opcional)
-    # generation_config = {
-    #     "temperature": 0.7,
-    #     "topK": 1,
-    #     "topP": 1,
-    #     "maxOutputTokens": 2048, # Ajuste conforme necessário
-    # }
-    # payload["generationConfig"] = generation_config
-
-
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            headers = {"Content-Type": "application/json"}
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            headers = {"Content-Type": "application/json", "x-goog-api-key": key}
+            response = await client.post(_gemini_url(model_to_use), json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise _request_error("Google", exc) from exc
+    if response.status_code != 200:
+        logger.debug("Gemini HTTP %s: %s", response.status_code, response.text[:200])
+        raise _error_from_status("Google", response.status_code, response.text)
 
-            if data.get('candidates') and data['candidates'][0].get('content') and data['candidates'][0]['content'].get('parts'):
-                raw_suggestions = data['candidates'][0]['content']['parts'][0]['text'].strip()
-                suggested_nodes = []
-                for line in raw_suggestions.split('\n'):
-                    cleaned_line = line.strip()
-                    if cleaned_line:
-                        suggested_nodes.append(AISuggestedNode(content=cleaned_line))
-                return suggested_nodes if suggested_nodes else [AISuggestedNode(content="Nenhuma sugestão gerada.")]
-            else:
-                print("Google API response format not as expected for suggestions:", data)
-                return [AISuggestedNode(content="Error: Formato de resposta inesperado do Google API para sugestões.")]
-
-    except httpx.RequestError as e:
-        print(f"Error contacting Google API: {e}")
-        return [AISuggestedNode(content="Error: Could not connect to Google API service.")]
-    except httpx.HTTPStatusError as e:
-        print(f"Google API request failed: {e.response.status_code} - {e.response.text}")
-        error_details = e.response.json().get('error', {}).get('message', e.response.text)
-        return [AISuggestedNode(content=f"Error: Google API request failed. {error_details}")]
-    except Exception as e:
-        print(f"An unexpected error occurred with Google API: {e}")
-        return [AISuggestedNode(content="Error: An unexpected error occurred with Google API.")]
+    data = response.json()
+    candidates = data.get("candidates") or []
+    parts = candidates[0].get("content", {}).get("parts") if candidates else None
+    if parts:
+        return _parse_suggestions(parts[0]["text"].strip())
+    logger.debug("Resposta inesperada do Gemini (sugestões): %s", str(data)[:300])
+    raise AIProviderError(
+        ErrorCode.PROVIDER_REQUEST_FAILED,
+        "O Gemini retornou uma resposta em formato inesperado.",
+        "Google", 502,
+    )

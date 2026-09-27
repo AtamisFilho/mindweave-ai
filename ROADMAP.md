@@ -6,9 +6,9 @@ Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa
 
 - [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
 - [ ] **Painel "research"**: o resultado da Pesquisa Profunda hoje só aparece em modal; criar painel lateral dedicado com histórico de pesquisas
-- [ ] **Erros estruturados**: substituir o controle de fluxo por strings `"Error:"` no backend (`endpoints_ai.py`, `ai_service.py`) por exceções/`HTTPException` tipadas
-- [ ] **Logging**: trocar `print()` de prompts por `logging` (evitar logar conteúdo sensível)
-- [ ] **Segurança da chave Gemini**: mover a chave da query string para o header `x-goog-api-key`
+- [x] **Erros estruturados** ✅ v0.2 — `AIProviderError` + `ErrorCode` estável (`PROVIDER_UNREACHABLE`, `PROVIDER_TIMEOUT`, `PROVIDER_INVALID_KEY`, `MODEL_NOT_FOUND`, `RATE_LIMIT_EXCEEDED`, `KEY_NOT_CONFIGURED`…); payload `{"detail": {error_code, message, provider}}`; frontend normaliza com `extractApiError` e já expõe `aiErrorCode` no store
+- [x] **Logging** ✅ v0.2 — `logging` estruturado com metadados (provider/model/ancestrais/tamanho); prompts completos apenas com `LOG_PROMPTS=true` (DEBUG); validado que chave e conteúdo de prompt não aparecem no log
+- [x] **Segurança da chave Gemini** ✅ v0.2 — chave no header `x-goog-api-key` (fora da query string)
 - [ ] **Toasts de feedback** no lugar de modais de erro para falhas leves
 - [ ] **Undo/redo** do mapa (Command pattern no store)
 - [ ] **Testes**: pytest para endpoints/serviços (httpx mock), Vitest + Testing Library para store e componentes

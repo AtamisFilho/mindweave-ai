@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from '../../store/mindMapStore';
+import { extractApiError } from '../../services/api';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
 import Select from '../UI/Select';
@@ -92,8 +93,8 @@ const AISettingsPanel = () => {
       // Re-fetch to get updated isOpenAiKeySet, isGoogleKeySet status from backend
       fetchAIConfig(); 
     } catch (error) {
-      // error might be an object from axios or a simple Error
-      const errorMessage = error.detail || error.message || 'Falha ao salvar configurações.';
+      // extractApiError normaliza { detail: { error_code, message } } do backend
+      const { message: errorMessage } = extractApiError(error);
       setPanelError(errorMessage);
       setStatusMessage(''); // Clear success message if there was one
     }
