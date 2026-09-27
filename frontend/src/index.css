@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+/* Modo escuro por classe (.dark no <html>) — sintaxe exigida pelo Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Estilos Globais Adicionais (se necessário) */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8fafc; /* Tailwind's gray-50 */
+  color: #374151; /* Tailwind's gray-700 */
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Estilos para a scrollbar (opcional, mas melhora a aparência) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #e5e7eb; /* Tailwind's gray-200 */
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #9ca3af; /* Tailwind's gray-400 */
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* Tailwind's gray-500 */
+}
+
+/* React Flow specific styles */
+.react-flow__handle {
+  /* Example: Make handles a bit larger and more visible */
+  width: 10px !important;
+  height: 10px !important;
+  background-color: #4b5563 !important; /* Tailwind's gray-600 */
+  border-radius: 50% !important;
+  border: 1px solid white !important;
+}
+
+.react-flow__handle-connecting {
+  background-color: #2563eb !important; /* Tailwind's blue-600 */
+}
+
+.react-flow__edge-path {
+  stroke-width: 2 !important;
+}
+
+/* Ensure custom node is not affected by global input/button styles if not desired */
+.custom-node-input {
+  /* specific styles for input inside custom node if needed */
+}
+
+/* Fix for React Flow Attribution when using Tailwind */
+.react-flow__attribution {
+  background: rgba(255, 255, 255, 0.7) !important;
+  padding: 2px 5px !important;
+  border-radius: 3px !important;
+  font-size: 10px !important;
+}
+
+.react-flow__minimap {
+    background-color: #f9fafb !important; /* gray-50 */
+    border-radius: 0.375rem; /* rounded-md */
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+}
+
+.react-flow__controls {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+}
+.react-flow__controls button {
+    background-color: #ffffff !important; /* white */
+    border-bottom: 1px solid #e5e7eb !important; /* gray-200 */
+}
+.react-flow__controls button:hover {
+    background-color: #f3f4f6 !important; /* gray-100 */
+}
+.react-flow__controls button svg {
+    fill: #374151 !important; /* gray-700 */
+}
+
+/* App specific global styles */
+.sidebar-panel > div {
+  padding: 1rem;
+  background-color: white;
+  border-radius: 0.375rem; /* rounded-md */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+}
+.sidebar-panel > div:not(:last-child) {
+  margin-bottom: 1rem;
+}
+
+/* Animação de pop-in do modal */
+@keyframes modalShow {
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-modalShow {
+  animation: modalShow 0.2s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
+}
+
+/* Customizações dos controles do React Flow (claro/escuro) */
+.react-flow__controls_custom button {
+    background-color: white; /* Ensure controls are visible on dark backgrounds */
+    border: 1px solid #e2e8f0;
+}
+.react-flow__controls_custom button:hover {
+    background-color: #f8fafc;
+}
+.react-flow__minimap_custom {
+    background-color: #f8fafc; /* Light background for minimap */
+    border-radius: 0.25rem;
+}
+.dark .react-flow__controls_custom button {
+    background-color: #374151; /* gray-700 */
+    border: 1px solid #4b5563; /* gray-600 */
+    color: white;
+}
+.dark .react-flow__controls_custom button svg {
+    fill: white;
+}
+.dark .react-flow__controls_custom button:hover {
+    background-color: #4b5563; /* gray-600 */
+}
+.dark .react-flow__minimap_custom {
+    background-color: #374151; /* gray-700 */
+}
+.dark .react-flow__background {
+    --bg-color: #1f2937; /* gray-800 */
+    --pattern-color: #4b5563; /* gray-600 */
+}
