@@ -4,14 +4,18 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import endpoints_ai
+from app.api.v1 import endpoints_ai, endpoints_maps
 from app.core.config import settings
 from app.core.errors import AIProviderError
+from app.db import init_db
 from app.services import ai_service
+from app.services.maps_service import MapVersionConflict
 
 logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolvimento
 
 logger = logging.getLogger("app")
+
+init_db()
 
 app = FastAPI(title="MindWeave AI Backend")
 
@@ -35,6 +39,23 @@ app.add_middleware(
 )
 
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
+app.include_router(endpoints_maps.router, prefix="/api/v1/maps", tags=["Maps"])
+
+
+@app.exception_handler(MapVersionConflict)
+async def map_version_conflict_handler(request: Request, exc: MapVersionConflict):
+    # Autosave de outra aba ganhou a corrida: frontend oferece recarregar
+    logger.warning("Conflito de versão de mapa (atual: %s)", exc.current_version)
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "error_code": "MAP_VERSION_CONFLICT",
+                "message": "Este mapa foi alterado em outra aba. Recarregue para ver a versão mais recente.",
+                "current_version": exc.current_version,
+            }
+        },
+    )
 
 
 @app.exception_handler(AIProviderError)
