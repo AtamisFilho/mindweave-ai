@@ -7,24 +7,53 @@ import {
 import { getAIConfig, updateAIConfig as apiUpdateAIConfig, performDeepResearch as apiPerformDeepResearch, suggestNewNodes as apiSuggestNewNodes } from '../services/api'; // Renomeado para evitar conflito
 import { nanoid } from 'nanoid'; 
 
-// Helper function to get ancestor context
-const getAncestorContext = (nodes, nodeId) => {
-    const context = [];
-    let currentNode = nodes.find(n => n.id === nodeId);
-    if (!currentNode) return [];
+// --- Hierarquia derivada das arestas (DAG) ---
+// As arestas do React Flow são a fonte única de verdade da hierarquia;
+// data.parentId é apenas cache de posicionamento (pai "principal" mais recente).
+const getAncestorContext = (nodes, edges, nodeId) => {
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const visited = new Set([nodeId]);
+  const queue = [];
+  const context = [];
 
-    // Assume parentId is stored in node.data.parentId
-    let parentId = currentNode.data?.parentId; 
-    while (parentId) {
-        const parentNode = nodes.find(n => n.id === parentId);
-        if (parentNode) {
-            context.push({ id: parentNode.id, content: parentNode.data.label });
-            parentId = parentNode.data?.parentId;
-        } else {
-            break; 
-        }
+  // Pais diretos primeiro (BFS subindo pelas arestas de entrada)
+  for (const edge of edges) {
+    if (edge.target === nodeId && !visited.has(edge.source)) {
+      queue.push(edge.source);
+      visited.add(edge.source);
     }
-    return context; 
+  }
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    const ancestorNode = nodeById.get(currentId);
+    if (ancestorNode) {
+      context.push({ id: ancestorNode.id, content: ancestorNode.data.label });
+    }
+    for (const edge of edges) {
+      if (edge.target === currentId && !visited.has(edge.source)) {
+        queue.push(edge.source);
+        visited.add(edge.source);
+      }
+    }
+  }
+  return context.slice(0, 12); // teto de custo do contexto enviado à IA
+};
+
+// source→target fecharia um ciclo se target já é ancestral de source
+const wouldCreateCycle = (edges, source, target) => {
+  const visited = new Set([source]);
+  const stack = [source];
+  while (stack.length > 0) {
+    const currentId = stack.pop();
+    if (currentId === target) return true;
+    for (const edge of edges) {
+      if (edge.target === currentId && !visited.has(edge.source)) {
+        visited.add(edge.source);
+        stack.push(edge.source);
+      }
+    }
+  }
+  return false;
 };
 
 
@@ -48,17 +77,42 @@ const useMindMapStore = create((set, get) => ({
 
   // --- React Flow specific actions ---
   onNodesChange: (changes) =>
-    set((state) => ({
-      nodes: applyNodeChanges(changes, state.nodes),
-    })),
+    set((state) => {
+      const nodes = applyNodeChanges(changes, state.nodes);
+      const removedIds = changes.filter(c => c.type === 'remove').map(c => c.id);
+      if (removedIds.length === 0) return { nodes };
+      // Nós removidos: limpa arestas órfãs e o cache parentId dos filhos
+      const removed = new Set(removedIds);
+      const aliveIds = new Set(nodes.map(n => n.id));
+      return {
+        nodes: nodes.map(n =>
+          n.data.parentId && !aliveIds.has(n.data.parentId)
+            ? { ...n, data: { ...n.data, parentId: null } }
+            : n
+        ),
+        edges: state.edges.filter(e => !removed.has(e.source) && !removed.has(e.target)),
+      };
+    }),
   onEdgesChange: (changes) =>
     set((state) => ({
       edges: applyEdgeChanges(changes, state.edges),
     })),
-  addEdge: (params) =>
-    set((state) => ({
-      edges: rfAddEdge({ ...params, type: 'smoothstep', animated: true, style: { strokeWidth: 2 } }, state.edges),
-    })),
+  // Conexão manual (drag entre handles): valida raiz/duplicata/ciclo e grava
+  // aresta + cache de posicionamento atomicamente. Cross-links são permitidos (DAG).
+  connectNodes: (params) => {
+    const { source, target } = params;
+    if (!source || !target || source === target) return false;
+    const state = get();
+    const targetNode = state.nodes.find(n => n.id === target);
+    if (!targetNode || targetNode.data.isRoot) return false; // raiz não vira filha
+    if (state.edges.some(e => e.source === source && e.target === target)) return false;
+    if (wouldCreateCycle(state.edges, source, target)) return false;
+    set((s) => ({
+      edges: rfAddEdge({ ...params, type: 'smoothstep', animated: true, style: { strokeWidth: 2 } }, s.edges),
+      nodes: s.nodes.map(n => (n.id === target ? { ...n, data: { ...n.data, parentId: source } } : n)),
+    }));
+    return true;
+  },
 
   // --- Node manipulation actions ---
   addNode: (parentNodeId = null, position, initialData = {}) => {
@@ -153,7 +207,7 @@ const useMindMapStore = create((set, get) => ({
     const researchData = {
       nodeId: node.id,
       nodeContent: node.data.label,
-      ancestorContext: getAncestorContext(get().nodes, nodeId),
+      ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
       provider: get().aiConfig.selectedProvider,
       model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
     };
@@ -177,7 +231,7 @@ const useMindMapStore = create((set, get) => ({
     const suggestionData = {
       nodeId: parentNode.id,
       nodeContent: parentNode.data.label,
-      ancestorContext: getAncestorContext(get().nodes, nodeId),
+      ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
       provider: get().aiConfig.selectedProvider,
       model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
     };

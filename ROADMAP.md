@@ -4,7 +4,7 @@ Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa
 
 ## v0.2 — Robustez
 
-- [ ] **Contexto hierárquico completo**: conexões manuais (drag entre handles) não atualizam `data.parentId` — a IA ignora essas conexões ao montar contexto (`mindMapStore.js`, `getAncestorContext`)
+- [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
 - [ ] **Painel "research"**: o resultado da Pesquisa Profunda hoje só aparece em modal; criar painel lateral dedicado com histórico de pesquisas
 - [ ] **Erros estruturados**: substituir o controle de fluxo por strings `"Error:"` no backend (`endpoints_ai.py`, `ai_service.py`) por exceções/`HTTPException` tipadas
 - [ ] **Logging**: trocar `print()` de prompts por `logging` (evitar logar conteúdo sensível)

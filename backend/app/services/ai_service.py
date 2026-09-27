@@ -36,9 +36,11 @@ def is_google_key_set() -> bool:
 
 
 def get_ancestor_context_string(ancestorContext: list[NodeContext]) -> str:
+    """Recebe os ancestrais ordenados do mais próximo ao mais amplo (o frontend
+    já faz o BFS sobre o grafo e envia a lista pronta, sem duplicatas)."""
     if not ancestorContext:
         return ""
-    return " -> ".join(reversed([ctx.content for ctx in ancestorContext]))
+    return "; ".join(ctx.content for ctx in ancestorContext)
 
 async def ollama_generate(prompt: str, model: str, base_url: str) -> str:
     full_response = ""
@@ -68,7 +70,7 @@ async def ollama_generate(prompt: str, model: str, base_url: str) -> str:
 
 async def perform_deep_research_ollama(request: AIResearchRequest, config: OllamaConfig) -> str:
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Considerando o contexto hierárquico: {ancestor_str}" if ancestor_str else ""
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else ""
     model_to_use = request.model_name or config.model
 
     prompt = (
@@ -83,7 +85,7 @@ async def perform_deep_research_ollama(request: AIResearchRequest, config: Ollam
 
 async def suggest_new_nodes_ollama(request: AISuggestNodesRequest, config: OllamaConfig) -> List[AISuggestedNode]:
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Considerando o contexto hierárquico: {ancestor_str}" if ancestor_str else ""
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else ""
     model_to_use = request.model_name or config.model
 
     prompt = (
@@ -117,7 +119,7 @@ async def perform_deep_research_openai(request: AIResearchRequest, api_key: Opti
         return "Error: OpenAI API Key não configurada."
     
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Contexto hierárquico: {ancestor_str}" if ancestor_str else "Este é um nó raiz."
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gpt-3.5-turbo"
 
     messages = [
@@ -156,7 +158,7 @@ async def suggest_new_nodes_openai(request: AISuggestNodesRequest, api_key: Opti
         return [AISuggestedNode(content="Error: OpenAI API Key não configurada.")]
 
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Contexto hierárquico: {ancestor_str}" if ancestor_str else "Este é um nó raiz."
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gpt-3.5-turbo"
 
     messages = [
@@ -207,7 +209,7 @@ async def perform_deep_research_google(request: AIResearchRequest, api_key: Opti
     # Você precisará ajustar o `model_name` e o endpoint/formato do payload conforme a documentação do Google.
     
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Contexto hierárquico: {ancestor_str}" if ancestor_str else "Este é um nó raiz."
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     # O usuário pode especificar um modelo como "gemini-1.5-flash-latest" ou "gemini-pro" etc.
     model_to_use = request.model_name or "gemini-1.5-flash-latest" 
     # O endpoint pode variar, verifique a documentação do Google AI Studio / Vertex AI
@@ -253,7 +255,7 @@ async def suggest_new_nodes_google(request: AISuggestNodesRequest, api_key: Opti
         return [AISuggestedNode(content="Error: Google API Key não configurada.")]
 
     ancestor_str = get_ancestor_context_string(request.ancestorContext)
-    context_narrative = f"Contexto hierárquico: {ancestor_str}" if ancestor_str else "Este é um nó raiz."
+    context_narrative = f"Contexto hierárquico (do mais próximo ao mais amplo): {ancestor_str}." if ancestor_str else "Este é um nó raiz."
     model_to_use = request.model_name or "gemini-1.5-flash-latest"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_to_use}:generateContent?key={api_key}"
 

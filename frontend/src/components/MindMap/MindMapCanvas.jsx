@@ -13,7 +13,7 @@ const MindMapCanvas = () => {
     edges, // Direct from store
     onNodesChange, // Store's handler
     onEdgesChange, // Store's handler
-    addEdge,       // Store's handler
+    connectNodes,  // Store's handler for manual connections (valida ciclo/duplicata)
     addNode,       // Store's handler for adding new nodes
     fetchAIConfig, // To fetch AI config on load
   } = useMindMapStore(useShallow((state) => ({
@@ -21,7 +21,7 @@ const MindMapCanvas = () => {
     edges: state.edges,
     onNodesChange: state.onNodesChange,
     onEdgesChange: state.onEdgesChange,
-    addEdge: state.addEdge,
+    connectNodes: state.connectNodes,
     addNode: state.addNode,
     fetchAIConfig: state.fetchAIConfig,
   })));
@@ -35,9 +35,9 @@ const MindMapCanvas = () => {
 
   const onConnect = useCallback(
     (params) => {
-      addEdge(params);
+      connectNodes(params);
     },
-    [addEdge]
+    [connectNodes]
   );
 
   const handleAddRootNode = () => {
