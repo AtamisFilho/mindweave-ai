@@ -1,8 +1,8 @@
 # MindWeave AI — Roadmap
 
-Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa mental com Pesquisa Profunda e Sugestão de Nós via Ollama/OpenAI/Gemini. Sem persistência: o mapa vive apenas em memória no navegador.
+Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistência** — mapas salvos automaticamente em SQLite (documento + índice FTS5), Fricção Zero no boot, resiliência offline. IA de Pesquisa Profunda e Sugestão de Nós via Ollama/OpenAI/Gemini.
 
-## v0.2 — Robustez
+## v0.3 — Persistência (SQLite)
 
 - [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
 - [x] **Painel "research"** ✅ v0.2 — painel híbrido: segue o "último nó pesquisado" (não a seleção do canvas), com pin 📍 para travar contexto, visão "Este nó"/"Todas", Markdown (react-markdown + remark-gfm + typography), copiar, tombstone para nós removidos e empty states
@@ -12,6 +12,15 @@ Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa
 - [x] **Toasts de feedback** ✅ v0.2 — sonner (tema dark/light, richColors); erros mapeados por `error_code`; `KEY_NOT_CONFIGURED` com ação "Abrir Configurações" que abre a aba e foca+destaca o campo da chave correta
 - [x] **Testes** ✅ v0.2 — 25 backend (pytest + respx: mapeamento de erros, parsing, contexto no prompt, chave no header) · 21 frontend (Vitest + Testing Library: DAG/ciclos/ancestrais no store, markdown do painel) · 4 E2E (Playwright com rotas mockadas: pesquisa+markdown, DAG via "Adicionar Filho", sugestões, sanity drag)
 - [x] **CI** ✅ v0.2 — GitHub Actions com cache pip/npm: backend (ruff + pytest) · frontend (eslint + vitest + build) · E2E (Playwright + artefatos de trace em falha)
+
+### v0.3 — Persistência (SQLite) ✅ v0.3.0
+
+- [x] **Schema Híbrido Invertido**: `maps` (documento JSON canônico + `version` para concorrência otimista) + `node_index` FTS5 derivado, reconstruído na transação do save
+- [x] **API `/api/v1/maps`**: CRUD + `/last` (Fricção Zero) + `/search` (FTS5, caixa/acento-insensível) + 409 `MAP_VERSION_CONFLICT`
+- [x] **Autosave** com debounce de 1s + Ctrl/Cmd+S imediato + indicador no header (Salvando…/Salvo há Xs/Offline/Conflito)
+- [x] **Fricção Zero**: boot carrega o último mapa ou cria "Mapa sem título" sem UI; menu discreto "Mapas" no header (Novo/Renomear inline/Busca/Excluir com Undo de 5s)
+- [x] **Resiliência offline**: snapshot em `localStorage`, indicador com botão Sincronizar, replay no bootstrap/'online'/focus, conflito 409 com "Manter do servidor"
+- [x] **E2Es de persistência** contra backend real: cria→recarrega, autosave sem Ctrl+S, 409 entre duas abas
 
 ### v0.2.5 — Extras (pendências leves da v0.2)
 

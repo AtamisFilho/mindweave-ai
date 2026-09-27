@@ -2,6 +2,21 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.3.0] — 2026-09-27
+
+### Adicionado
+- **Persistência de mapas ("Híbrido Invertido")**: documento JSON como fonte da verdade (formato nativo do frontend, salvo atomicamente) + índice derivado `node_index` (FTS5) reconstruído a cada save — busca global de nós já disponível via `GET /api/v1/maps/search` (caixa/acento-insensível, prefixo).
+- **Fricção Zero**: o app abre direto no último mapa editado (`GET /maps/last`); primeiro acesso cria um "Mapa sem título" sem nenhuma UI. Gestão de mapas (Novo, Renomear, Buscar, Excluir) vive num menu discreto no header.
+- **Autosave silencioso** com debounce de 1s em qualquer mudança de nós/arestas/título + **Ctrl/Cmd+S** salva imediatamente (toast "Mapa salvo").
+- **Concorrência otimista**: coluna `version` — autosave de outra aba recebe 409 `MAP_VERSION_CONFLICT` e o frontend oferece "Recarregar", nunca sobrescrevendo silenciosamente.
+- **Resiliência offline**: falha de rede → snapshot automático em `localStorage` + indicador "⚠️ Offline (salvo localmente) — Sincronizar"; replay automático ao voltar a conexão, com alerta de conflito se o mapa mudou no servidor.
+- **Título editável inline** no header (Enter salva, Esc cancela).
+- **E2Es de persistência** contra backend real: cria→recarrega, autosave sem Ctrl+S, 409 entre duas abas.
+
+### Técnico
+- SQLAlchemy 2.0 + SQLite (`PRAGMA foreign_keys=ON`, `journal_mode=WAL`); FTS5 via DDL.
+- Padrão de sinal de teste: asserts de save consultam o **servidor** (`/last`), nunca o indicador local (que fica "Salvo" desde o boot).
+
 ## [0.2.0] — 2026-09-27
 
 ### Adicionado
