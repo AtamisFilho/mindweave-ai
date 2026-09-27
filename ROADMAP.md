@@ -5,11 +5,11 @@ Estado atual (v0.1): aplicação funcional de ponta a ponta — edição de mapa
 ## v0.2 — Robustez
 
 - [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
-- [ ] **Painel "research"**: o resultado da Pesquisa Profunda hoje só aparece em modal; criar painel lateral dedicado com histórico de pesquisas
+- [x] **Painel "research"** ✅ v0.2 — painel híbrido: segue o "último nó pesquisado" (não a seleção do canvas), com pin 📍 para travar contexto, visão "Este nó"/"Todas", Markdown (react-markdown + remark-gfm + typography), copiar, tombstone para nós removidos e empty states
 - [x] **Erros estruturados** ✅ v0.2 — `AIProviderError` + `ErrorCode` estável (`PROVIDER_UNREACHABLE`, `PROVIDER_TIMEOUT`, `PROVIDER_INVALID_KEY`, `MODEL_NOT_FOUND`, `RATE_LIMIT_EXCEEDED`, `KEY_NOT_CONFIGURED`…); payload `{"detail": {error_code, message, provider}}`; frontend normaliza com `extractApiError` e já expõe `aiErrorCode` no store
 - [x] **Logging** ✅ v0.2 — `logging` estruturado com metadados (provider/model/ancestrais/tamanho); prompts completos apenas com `LOG_PROMPTS=true` (DEBUG); validado que chave e conteúdo de prompt não aparecem no log
 - [x] **Segurança da chave Gemini** ✅ v0.2 — chave no header `x-goog-api-key` (fora da query string)
-- [ ] **Toasts de feedback** no lugar de modais de erro para falhas leves
+- [x] **Toasts de feedback** ✅ v0.2 — sonner (tema dark/light, richColors); erros mapeados por `error_code`; `KEY_NOT_CONFIGURED` com ação "Abrir Configurações" que abre a aba e foca+destaca o campo da chave correta
 - [ ] **Undo/redo** do mapa (Command pattern no store)
 - [ ] **Testes**: pytest para endpoints/serviços (httpx mock), Vitest + Testing Library para store e componentes
 - [ ] **CI**: GitHub Actions (ruff + pytest; eslint + build)

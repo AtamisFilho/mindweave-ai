@@ -10,7 +10,9 @@ import {
   suggestNewNodes as apiSuggestNewNodes,
   extractApiError,
 } from '../services/api'; // Renomeado para evitar conflito
-import { nanoid } from 'nanoid'; 
+import { notifyAiError } from '../services/notify';
+import { toast } from 'sonner';
+import { nanoid } from 'nanoid';
 
 // --- Hierarquia derivada das arestas (DAG) ---
 // As arestas do React Flow são a fonte única de verdade da hierarquia;
@@ -76,8 +78,16 @@ const useMindMapStore = create((set, get) => ({
   },
   aiLoading: false,
   aiError: null,
-  aiErrorCode: null, // código estável do backend (ex: PROVIDER_TIMEOUT) — consumido por toasts no Bloco 3
+  aiErrorCode: null, // código estável do backend (ex: PROVIDER_TIMEOUT) — consumido pelos toasts
   researchResult: null,
+  researchHistory: [],      // [{id, nodeId, summary, createdAt}] — mais recente primeiro
+  researchPanelNodeId: null, // nó exibido no painel (NÃO segue a seleção do canvas)
+  researchPanelPinned: false, // pin: novas pesquisas não trocam o contexto do painel
+  configFocusKey: null,     // 'openai' | 'google' | null — foca o campo da chave faltante
+  darkMode: (typeof window !== 'undefined')
+    ? (localStorage.getItem('darkMode') === 'true' ||
+       (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
+    : false,
   activePanel: 'nodes',
 
 
@@ -222,10 +232,30 @@ const useMindMapStore = create((set, get) => ({
 
     try {
       const result = await apiPerformDeepResearch(researchData); // from api.js
-      set({ researchResult: {nodeId: result.nodeId, summary: result.researchSummary }, aiLoading: false });
+      const entry = {
+        id: `${Date.now()}-${result.nodeId}`,
+        nodeId: result.nodeId,
+        summary: result.researchSummary,
+        createdAt: Date.now(),
+      };
+      set((s) => ({
+        researchResult: { nodeId: result.nodeId, summary: result.researchSummary },
+        researchHistory: [entry, ...s.researchHistory],
+        // Painel segue o "último nó pesquisado", exceto quando fixado (pin)
+        researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : result.nodeId,
+        activePanel: 'research',
+        aiLoading: false,
+      }));
+      toast.success('Pesquisa concluída', {
+        description: 'O resultado está no painel de Pesquisas.',
+      });
     } catch (error) {
-      const { code, message } = extractApiError(error);
+      const { code, message, provider } = extractApiError(error);
       set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      notifyAiError(
+        { code, message, provider },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
     }
   },
 
@@ -248,22 +278,58 @@ const useMindMapStore = create((set, get) => ({
     try {
       const result = await apiSuggestNewNodes(suggestionData); // from api.js
       if (result.suggestedNodes && result.suggestedNodes.length > 0) {
-        result.suggestedNodes.forEach((suggestion, index) => {
+        result.suggestedNodes.forEach((suggestion) => {
           // Use addNode to create and position the new suggested nodes
           get().addNode(nodeId, undefined, { label: suggestion.content });
         });
+        toast.success(`${result.suggestedNodes.length} nós sugeridos`, {
+          description: 'Adicionados como filhos do nó selecionado.',
+        });
+      } else {
+        toast.info('A IA não retornou sugestões desta vez.');
       }
       set({ aiLoading: false });
     } catch (error) {
-      const { code, message } = extractApiError(error);
+      const { code, message, provider } = extractApiError(error);
       set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      notifyAiError(
+        { code, message, provider },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
     }
   },
 
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
-  clearResearchError: () => set({ aiError: null }),
+  clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
   clearResearchResult: () => set({ researchResult: null }),
+
+  toggleDarkMode: () =>
+    set((s) => {
+      const darkMode = !s.darkMode;
+      if (typeof document !== 'undefined') {
+        document.documentElement.classList.toggle('dark', darkMode);
+        localStorage.setItem('darkMode', String(darkMode));
+      }
+      return { darkMode };
+    }),
+
+  // Painel de pesquisas: segue o "último nó pesquisado", com pin opcional
+  toggleResearchPanelPin: () =>
+    set((s) => ({ researchPanelPinned: !s.researchPanelPinned })),
+  setResearchPanelNode: (nodeId) =>
+    set({ researchPanelNodeId: nodeId, activePanel: 'research' }),
+
+  // Toast "Abrir Configurações": abre a aba de config e aponta o campo da chave
+  openConfigForKey: (provider) => {
+    const target = String(provider || '').toLowerCase() === 'google'
+      ? 'google'
+      : String(provider || '').toLowerCase() === 'openai'
+        ? 'openai'
+        : null;
+    set({ activePanel: 'config', configFocusKey: target });
+  },
+  clearConfigFocusKey: () => set({ configFocusKey: null }),
 
 }));
 

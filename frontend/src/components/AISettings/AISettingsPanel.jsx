@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from '../../store/mindMapStore';
 import { extractApiError } from '../../services/api';
@@ -12,14 +12,20 @@ const AISettingsPanel = () => {
     fetchAIConfig,
     updateAIConfig,
     aiLoading,
-    // aiError, // aiError from the store is global, might not be specific to this panel
+    configFocusKey,
+    clearConfigFocusKey,
   } = useMindMapStore(useShallow((state) => ({
     aiConfig: state.aiConfig,
     fetchAIConfig: state.fetchAIConfig,
     updateAIConfig: state.updateAIConfig,
     aiLoading: state.aiLoading,
-    // aiError: state.aiError,
+    configFocusKey: state.configFocusKey,
+    clearConfigFocusKey: state.clearConfigFocusKey,
   })));
+
+  const openaiInputRef = useRef(null);
+  const googleInputRef = useRef(null);
+  const [highlightField, setHighlightField] = useState(null);
 
   const [localConfig, setLocalConfig] = useState({
     selectedProvider: 'ollama',
@@ -46,11 +52,30 @@ const AISettingsPanel = () => {
           baseUrl: aiConfig.ollamaConfig?.baseUrl || 'http://localhost:11434',
           model: aiConfig.ollamaConfig?.model || 'llama3',
         },
-        isOpenAiKeySet: aiConfig.isOpenAiKeySet, 
+        isOpenAiKeySet: aiConfig.isOpenAiKeySet,
         isGoogleKeySet: aiConfig.isGoogleKeySet,
       }));
     }
   }, [aiConfig]);
+
+  // Toast "Abrir Configurações": troca para o provedor indicado, foca e destaca o campo
+  useEffect(() => {
+    if (!configFocusKey) return undefined;
+    setLocalConfig((prev) => ({ ...prev, selectedProvider: configFocusKey }));
+    setHighlightField(configFocusKey);
+    const focusTimer = setTimeout(() => {
+      const input = configFocusKey === 'google' ? googleInputRef.current : openaiInputRef.current;
+      input?.focus();
+      clearConfigFocusKey();
+    }, 250); // aguarda o bloco do provedor re-renderizar
+    const highlightTimer = setTimeout(() => setHighlightField(null), 4000);
+    return () => { clearTimeout(focusTimer); clearTimeout(highlightTimer); };
+  }, [configFocusKey, clearConfigFocusKey]);
+
+  const fieldHighlight = (field) =>
+    highlightField === field
+      ? 'ring-2 ring-amber-400 dark:ring-amber-500 rounded-md p-1 -m-1 bg-amber-50 dark:bg-amber-900/30'
+      : '';
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -161,13 +186,14 @@ const AISettingsPanel = () => {
         )}
 
         {localConfig.selectedProvider === 'openai' && (
-          <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800">
+          <div className={`p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 ${fieldHighlight('openai')}`}>
             <h4 className="text-md font-semibold text-gray-700 dark:text-gray-200">OpenAI</h4>
             <div>
               <label htmlFor="openaiApiKey" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Chave da API OpenAI {localConfig.isOpenAiKeySet && <span className="text-green-500 text-xs">(Configurada)</span>}
               </label>
               <Input
+                ref={openaiInputRef}
                 type="password"
                 name="openaiApiKey"
                 value={localConfig.openaiApiKey}
@@ -180,13 +206,14 @@ const AISettingsPanel = () => {
         )}
 
         {localConfig.selectedProvider === 'google' && (
-          <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800">
+          <div className={`p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 ${fieldHighlight('google')}`}>
             <h4 className="text-md font-semibold text-gray-700 dark:text-gray-200">Google (Gemini)</h4>
             <div>
               <label htmlFor="googleApiKey" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Chave da API Google {localConfig.isGoogleKeySet && <span className="text-green-500 text-xs">(Configurada)</span>}
               </label>
               <Input
+                ref={googleInputRef}
                 type="password"
                 name="googleApiKey"
                 value={localConfig.googleApiKey}

@@ -9,16 +9,17 @@ const apiClient = axios.create({
   },
 });
 
-// Normaliza o erro da API para { code, message }.
+// Normaliza o erro da API para { code, message, provider }.
 // O backend responde falhas de IA com: { detail: { error_code, message, provider } }
 export const extractApiError = (error) => {
   const detail = error?.response?.data?.detail ?? error?.detail ?? error?.message;
   if (typeof detail === 'string') {
-    return { code: 'UNKNOWN', message: detail };
+    return { code: 'UNKNOWN', message: detail, provider: null };
   }
   return {
     code: detail?.error_code || 'UNKNOWN',
     message: detail?.message || 'Erro inesperado ao chamar a IA.',
+    provider: detail?.provider || null,
   };
 };
 

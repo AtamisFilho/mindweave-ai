@@ -3,6 +3,9 @@
 /* Modo escuro por classe (.dark no <html>) — sintaxe exigida pelo Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Tipografia editorial para conteúdo gerado por IA (painel de pesquisas) */
+@plugin "@tailwindcss/typography";
+
 /* Estilos Globais Adicionais (se necessário) */
 body {
   margin: 0;
