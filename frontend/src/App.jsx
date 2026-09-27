@@ -3,6 +3,9 @@ import { Toaster } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from './store/mindMapStore';
 import Button from './components/UI/Button';
+import MapTitle from './components/Maps/MapTitle';
+import MapsMenu from './components/Maps/MapsMenu';
+import SaveIndicator from './components/Maps/SaveIndicator';
 
 // Lazy load components for better initial load time
 const MindMapCanvas = React.lazy(() => import('./components/MindMap/MindMapCanvas'));
@@ -24,6 +27,37 @@ function App() {
     aiLoading: state.aiLoading,
   })));
 
+  // Fricção Zero: carrega o último mapa (ou cria um novo) — sem tela de lista
+  useEffect(() => {
+    useMindMapStore.getState().bootstrapMap();
+  }, []);
+
+  // Ctrl/Cmd+S: salva imediatamente (bypassa o debounce do autosave)
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        useMindMapStore.getState().saveNow({ manual: true });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Offline -> online: tenta sincronizar pendências automaticamente
+  useEffect(() => {
+    const onOnline = () => useMindMapStore.getState().retrySync();
+    const onFocus = () => {
+      if (useMindMapStore.getState().pendingLocal) onOnline();
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
   const LoadingFallback = ({text = "Carregando componente..."}) => (
     <div className="flex items-center justify-center h-full w-full p-4 text-gray-500 dark:text-gray-400 text-sm">
       {text}
@@ -37,11 +71,19 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen antialiased text-gray-800 dark:text-gray-200">
-      <header className="bg-gray-700 dark:bg-gray-900 text-white p-3 shadow-md flex justify-between items-center print:hidden">
-        <h1 className="text-xl font-semibold">MindWeave AI</h1>
-        <Button onClick={toggleDarkMode} variant="ghost" className="text-sm px-2! py-1!">
-          {darkMode ? 'Modo Claro' : 'Modo Escuro'}
-        </Button>
+      <header className="bg-gray-700 dark:bg-gray-900 text-white p-3 shadow-md flex justify-between items-center gap-2 print:hidden">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-xl font-semibold shrink-0">MindWeave AI</h1>
+          <span className="text-gray-500">/</span>
+          <MapTitle />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <SaveIndicator />
+          <MapsMenu />
+          <Button onClick={toggleDarkMode} variant="ghost" className="text-sm px-2! py-1!">
+            {darkMode ? 'Modo Claro' : 'Modo Escuro'}
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">

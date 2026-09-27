@@ -70,4 +70,40 @@ export const suggestNewNodes = async (suggestionData) => {
   }
 };
 
+// --- Maps Endpoints (persistência) ---
+export const listMaps = async () => {
+  const response = await apiClient.get('/maps');
+  return response.data;
+};
+
+export const createMap = async (payload) => {
+  const response = await apiClient.post('/maps', payload);
+  return response.data;
+};
+
+export const getMap = async (id) => {
+  const response = await apiClient.get(`/maps/${id}`);
+  return response.data;
+};
+
+export const getLastMap = async () => {
+  const response = await apiClient.get('/maps/last');
+  return response.data;
+};
+
+export const saveMapApi = async (id, payload) => {
+  const response = await apiClient.put(`/maps/${id}`, payload);
+  return response.data;
+};
+
+export const deleteMapApi = async (id) => {
+  const response = await apiClient.delete(`/maps/${id}`);
+  return response.data;
+};
+
+export const searchNodesApi = async (q) => {
+  const response = await apiClient.get('/maps/search', { params: { q } });
+  return response.data;
+};
+
 export default apiClient;

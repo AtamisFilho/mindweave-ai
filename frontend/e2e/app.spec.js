@@ -24,6 +24,21 @@ const MD_FIXTURE = [
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/ai/config', (route) => route.fulfill({ json: CONFIG_FIXTURE }));
+  // Persistência (v0.3): bootstrap sem mapas -> cria "Mapa sem título" no POST
+  await page.route('**/api/v1/maps/last', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'Nenhum mapa salvo ainda.' } }));
+  await page.route('**/api/v1/maps/search', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/v1/maps', (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      return route.fulfill({ json: {
+        id: 'map-e2e', title: body.title, version: 1,
+        document: body.document, node_count: body.document?.nodes?.length ?? 0,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      } });
+    }
+    return route.fulfill({ json: [] }); // GET lista vazia
+  });
   await page.route('**/api/v1/ai/deep-research', async (route) => {
     const body = route.request().postDataJSON();
     await new Promise((r) => setTimeout(r, 300)); // deixa o "IA Processando..." aparecer
