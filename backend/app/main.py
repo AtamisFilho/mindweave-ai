@@ -20,15 +20,8 @@ init_db()
 app = FastAPI(title="MindWeave AI Backend")
 
 # Configuração do CORS
-# Permite que o frontend (que rodará em outra porta/domínio) acesse a API.
-# Para desenvolvimento, "*" é aceitável. Em produção, restrinja as origens.
-origins = [
-    "http://localhost:5173",  # Porta padrão do Vite dev server
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    # Adicione outras origens se necessário (ex: URL de produção do frontend)
-]
+# Origens vem de ALLOWED_ORIGINS (env, separadas por vírgula); default = dev local.
+origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +30,22 @@ app.add_middleware(
     allow_methods=["*"], # Permite todos os métodos (GET, POST, PUT, etc.)
     allow_headers=["*"], # Permite todos os cabeçalhos
 )
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Headers de segurança básicos em toda resposta.
+
+    HSTS só deve ser habilitado quando a aplicação servir HTTPS
+    (flag SECURITY_HSTS no .env — ver Settings).
+    """
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if settings.SECURITY_HSTS:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
 app.include_router(endpoints_maps.router, prefix="/api/v1/maps", tags=["Maps"])

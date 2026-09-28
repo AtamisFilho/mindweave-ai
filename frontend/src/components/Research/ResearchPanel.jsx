@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from '../../store/mindMapStore';
 import Button from '../UI/Button';
+import ErrorBoundary from '../ErrorBoundary';
 
 const formatTime = (ts) =>
   new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -47,9 +48,24 @@ const ResearchEntry = ({ entry, nodeLabel, expanded, onToggle, onLabelClick }) =
       </button>
       {expanded && (
         <div className="px-3 py-2 bg-white dark:bg-gray-800">
-          <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.summary}</ReactMarkdown>
-          </div>
+          {/* Markdown malformado nunca derruba o painel: fallback com o texto cru */}
+          <ErrorBoundary
+            resetKey={entry.id}
+            fallback={() => (
+              <div>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                  ⚠️ Não foi possível renderizar esta pesquisa — exibindo o texto original.
+                </p>
+                <pre className="text-xs whitespace-pre-wrap text-gray-600 dark:text-gray-300 max-h-64 overflow-y-auto">
+                  {entry.summary}
+                </pre>
+              </div>
+            )}
+          >
+            <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.summary}</ReactMarkdown>
+            </div>
+          </ErrorBoundary>
           <div className="flex justify-end mt-1">
             <Button
               onClick={handleCopy}

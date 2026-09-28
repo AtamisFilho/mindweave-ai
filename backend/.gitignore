@@ -1,1 +1,4 @@
-backend/*.db*
+# Bancos SQLite (fonte da verdade dos mapas — nunca versionar)
+*.db
+*.db-wal
+*.db-shm

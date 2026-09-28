@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from './store/mindMapStore';
 import Button from './components/UI/Button';
+import ErrorBoundary from './components/ErrorBoundary';
 import MapTitle from './components/Maps/MapTitle';
 import MapsMenu from './components/Maps/MapsMenu';
 import SaveIndicator from './components/Maps/SaveIndicator';
@@ -70,7 +71,22 @@ function App() {
   }, [darkMode]);
 
   return (
-    <div className="flex flex-col h-screen antialiased text-gray-800 dark:text-gray-200">
+    <ErrorBoundary
+      fallback={() => (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-200 gap-3 p-6 text-center">
+          <span className="text-4xl" aria-hidden="true">🧩</span>
+          <h1 className="text-xl font-semibold">Algo deu errado na interface</h1>
+          <p className="text-sm max-w-md text-gray-500 dark:text-gray-400">
+            Seu último mapa salvo está a salvo no servidor — nada foi perdido.
+            Recarregue a página para voltar ao trabalho.
+          </p>
+          <Button onClick={() => window.location.reload()} variant="primary" className="mt-2">
+            Recarregar
+          </Button>
+        </div>
+      )}
+    >
+      <div className="flex flex-col h-screen antialiased text-gray-800 dark:text-gray-200">
       <header className="bg-gray-700 dark:bg-gray-900 text-white p-3 shadow-md flex justify-between items-center gap-2 print:hidden">
         <div className="flex items-center gap-2 min-w-0">
           <h1 className="text-xl font-semibold shrink-0">MindWeave AI</h1>
@@ -150,7 +166,8 @@ function App() {
         richColors
         closeButton
       />
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

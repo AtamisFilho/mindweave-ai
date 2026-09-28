@@ -2,7 +2,8 @@
 import os
 
 # DATABASE_URL precisa existir ANTES do primeiro import de app.db
-os.environ["DATABASE_URL"] = f"sqlite:///./test_mindweave_{os.getpid()}.db"
+# (setdefault permite override externo, ex.: CI rodando com SQLite em memória)
+os.environ.setdefault("DATABASE_URL", f"sqlite:///./test_mindweave_{os.getpid()}.db")
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402

@@ -2,6 +2,18 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.3.1] — 2026-09-28
+
+### Hardening (auditoria adversarial pré-Layout)
+
+- **Histórico git higienizado pré-publicação**: 6 bancos SQLite removidos de todos os commits com `git-filter-repo` (tags v0.2.0/v0.3.0 reapontadas; backup local mantido em `../mindweave-backup-pre-purge-v0.3.0`; hashes a partir do commit de persistência mudaram). Conteúdo dos bancos era dado de teste — nenhum segredo no histórico (verificado por varredura de padrões).
+- **`.gitignore` do backend corrigido**: padrões relativos (`*.db`, `*.db-wal`, `*.db-shm`) — o padrão antigo tinha prefixo `backend/` dentro do próprio `backend/.gitignore` e nunca casava.
+- **ErrorBoundary duplo**: global (crash de render → tela amigável com "Recarregar") e dedicado ao painel de Markdown (fallback com o texto cru em `<pre>` — o conteúdo nunca some).
+- **Headers de segurança** via middleware: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. HSTS atrás da flag `SECURITY_HSTS` (só com HTTPS).
+- **CORS env-driven**: `ALLOWED_ORIGINS` no Settings (default = dev local).
+- **a11y**: `aria-label` no textarea de edição do nó; TODO anotado para o `getState()` não-reativo no `CustomNode`.
+- **Testes**: `conftest` respeita `DATABASE_URL` externo (`setdefault`) — permite override em CI.
+
 ## [0.3.0] — 2026-09-27
 
 ### Adicionado

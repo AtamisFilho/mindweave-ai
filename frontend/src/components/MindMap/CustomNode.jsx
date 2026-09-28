@@ -92,7 +92,8 @@ const CustomNode = ({ id, data, selected }) => {
           onChange={handleLabelChange}
           onBlur={handleLabelBlur}
           onKeyDown={handleKeyDown}
-          className="text-gray-900 bg-white p-1.5 rounded border border-sky-300 w-full text-center text-sm 
+          aria-label="Texto do nó"
+          className="text-gray-900 bg-white p-1.5 rounded border border-sky-300 w-full text-center text-sm
                      focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none custom-node-input"
           rows={Math.max(1, Math.ceil(label.length / 20))} // Basic auto-resize for rows
           autoFocus
@@ -108,6 +109,8 @@ const CustomNode = ({ id, data, selected }) => {
       {/* Action buttons - visible when node is selected or hovered (if using group hover) */}
       {selected && (
         <div className="mt-2.5 pt-2.5 border-t border-sky-400 dark:border-sky-500 space-y-1.5">
+          {/* TODO(v0.4): getState() em render não é reativo (auditoria v0.3.1) —
+              mover researchResult para o seletor useShallow acima. */}
           <Button
             onClick={onDeepResearch}
             variant="outline"
