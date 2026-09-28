@@ -8,12 +8,12 @@ import useMindMapStore from '../../store/mindMapStore';
 import CustomNode from './CustomNode';
 import Button from '../UI/Button';
 import Select from '../UI/Select';
-import { computeLayout, LAYOUT_DIRECTIONS } from '../../layout/engine';
+import { computeLayout, LAYOUT_SCHEMAS } from '../../layout/engine';
 
 const MindMapCanvas = () => {
   const wrapperRef = useRef(null);
   const { fitView } = useReactFlow();
-  const [direction, setDirection] = useState('LR');
+  const [layoutSchema, setLayoutSchema] = useState('balanced-lr');
 
   const {
     nodes, // Direct from store
@@ -69,7 +69,7 @@ const MindMapCanvas = () => {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // Motor puro -> única escrita de posição em massa (snapshot p/ Undo escopado)
-    const positions = computeLayout(nodes, edges, { direction });
+    const positions = computeLayout(nodes, edges, { schema: layoutSchema });
     const previous = applyLayoutPositions(positions);
 
     // Transição animada + fitView; reduced-motion pula direto para o estado final
@@ -132,17 +132,17 @@ const MindMapCanvas = () => {
         <Panel position="top-center" className="p-2">
             <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-2 py-1.5">
                 <Select
-                    value={direction}
-                    onChange={(e) => setDirection(e.target.value)}
-                    options={LAYOUT_DIRECTIONS}
-                    className="text-xs w-44"
-                    aria-label="Direção do layout"
+                    value={layoutSchema}
+                    onChange={(e) => setLayoutSchema(e.target.value)}
+                    options={LAYOUT_SCHEMAS}
+                    className="text-xs w-52"
+                    aria-label="Schema do layout"
                 />
                 <Button
                     onClick={handleAutoOrganizar}
                     variant="primary"
                     className="text-xs py-1.5 px-3 shrink-0"
-                    title={`Organiza o mapa na direção escolhida (${direction})`}
+                    title={`Organiza o mapa no schema escolhido (${layoutSchema})`}
                 >
                     ⚡ Auto-organizar
                 </Button>

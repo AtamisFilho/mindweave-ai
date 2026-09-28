@@ -1,4 +1,5 @@
 import dagre from '@dagrejs/dagre';
+import { computeBalancedLayout } from './balance';
 
 /**
  * Motor de layout automático — FUNÇÃO PURA (Diretriz b do Tech Lead):
@@ -14,12 +15,25 @@ import dagre from '@dagrejs/dagre';
 
 export const DEFAULT_NODE_SIZE = { width: 220, height: 70 };
 
-export const LAYOUT_DIRECTIONS = [
+// Schemas no estilo niMind: 4 direções simples + 2 balanceadas (raiz no centro)
+export const LAYOUT_SCHEMAS = [
   { value: 'LR', label: 'Esquerda → Direita' },
   { value: 'RL', label: 'Direita → Esquerda' },
   { value: 'TB', label: 'Cima → Baixo' },
   { value: 'BT', label: 'Baixo → Cima' },
+  { value: 'balanced-lr', label: 'Left-Right (balanceado)' },
+  { value: 'balanced-ud', label: 'Up-Down (balanceado)' },
 ];
+
+// Compat com o B1 (canvas antigo/testes)
+export const LAYOUT_DIRECTIONS = LAYOUT_SCHEMAS.filter((s) => !s.value.startsWith('balanced'));
+
+const BALANCED_SCHEMAS = {
+  'balanced-lr': { axis: 'x', flip: false },
+  'balanced-rl': { axis: 'x', flip: true },
+  'balanced-ud': { axis: 'y', flip: false },
+  'balanced-du': { axis: 'y', flip: true },
+};
 
 function nodeSize(node) {
   return {
@@ -41,15 +55,31 @@ function edgeKey(edge) {
 /**
  * @param {Array} nodes   nós no formato React Flow ({ id, position, measured?, width?, height? })
  * @param {Array} edges   arestas no formato React Flow ({ id, source, target })
- * @param {object} config { direction: 'LR'|'RL'|'TB'|'BT', nodesep, ranksep }
+ * @param {object} config { schema?: 'LR'|'RL'|'TB'|'BT'|'balanced-lr'|'balanced-ud'|…,
+ *                          direction?: (alias legado de schema), nodesep, ranksep }
  * @returns {object}      { nodeId: { x, y } } — canto superior esquerdo (formato React Flow)
  */
-export function computeLayout(nodes, edges, { direction = 'LR', nodesep = 60, ranksep = 120 } = {}) {
+export function computeLayout(nodes, edges, {
+  schema,
+  direction,
+  nodesep = 60,
+  ranksep = 120,
+} = {}) {
+  const effective = schema ?? direction ?? 'LR';
+
+  if (BALANCED_SCHEMAS[effective]) {
+    return computeBalancedLayout(nodes, edges, {
+      ...BALANCED_SCHEMAS[effective],
+      nodesep,
+      ranksep,
+    });
+  }
+
   const sortedNodes = [...nodes].sort(compareById);
   const sortedEdges = [...edges].sort((a, b) => edgeKey(a).localeCompare(edgeKey(b)));
 
   const graph = new dagre.graphlib.Graph({ multigraph: true });
-  graph.setGraph({ rankdir: direction, nodesep, ranksep, marginx: 0, marginy: 0 });
+  graph.setGraph({ rankdir: effective, nodesep, ranksep, marginx: 0, marginy: 0 });
   graph.setDefaultEdgeLabel(() => ({}));
   graph.setDefaultNodeLabel(() => ({}));
 

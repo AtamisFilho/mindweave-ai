@@ -89,6 +89,9 @@ function layoutBalanced(nodes, edges, { axis = 'x' /* x = LR, y = UD */ }) {
 **Política de cross-links (decisão explícita):**
 - **Mesmo lado:** entram no grafo dagre do lado — o layering respeita como restrição. ✓
 - **Lado oposto (atravessam o centro):** **ignorados pelo motor na v1** — a aresta é desenhada por cima do canvas (smoothstep/straight), mas não constrange posições. Simplificação consciente: incluir exigiria constraints entre os dois grafos (duplicação de nós dummy). Documentado como limitação; revisitar só se visualmente incômodo.
+- **Dono do nó:** filhos DIRETOS da raiz pertencem sempre ao lado que a partição lhes deu — um cross-link que alcança um filho direto pelo outro lado NUNCA o move de lado. Nós não-diretos pertencem ao primeiro lado que os alcança (ordem fixa A→B = determinístico).
+
+**Peso da subárvore (implementado):** contagem de nós no fecho descendente (modo `count`). O refinamento visual (soma de alturas medidas, modo `visual`) fica como evolução opcional — a interface de `partitionChildren` já isola a troca.
 
 **Up-Down:** mesma função com `axis = 'y'` (espelho vertical). **Up / Down / Left / Right "puros":** um único dagre com o rankdir correspondente, sem partição — é o caso degenerado do mesmo código.
 
@@ -149,8 +152,8 @@ Canvas é o protagonista; o controle mora **num Panel do próprio canvas** (não
 
 ## 10. Blocos de execução (futuros — nada implementado neste branch)
 
-- **B1 — Motor base:** dependência dagre, `engine.js` + `dagreAdapter.js` (TB/BT/LR/RL), botão "Auto-organizar", `applyLayoutPositions` no store, Vitest do engine puro.
-- **B2 — Balanceado:** `balanced.js` (partição por peso + espelhamento) + direções Up-Down/Left-Right + política de cross-links + testes de_snapshot (posições determinísticas).
+- **B1 — Motor base:** ✅ dagre, `engine.js` + `dagreAdapter` (TB/BT/LR/RL), botão "Auto-organizar", `applyLayoutPositions` no store, Vitest do engine puro.
+- **B2 — Balanceado:** ✅ `balance.js` (partição gulosa por peso de fecho + espelhamento do lado A sobre dois dagres LR) + schemas `balanced-lr/rl/ud/du` + política de dono de nó/cross-links + 17 testes (fixtures assimétricas, simetria, determinismo, UD).
 - **B3 — Os 9 esquemas + UI:** `schemas.js` (edgeType × densidade), variante compacta do CustomNode, popover com previews mini-SVG, `document.meta.layout` persistido, Free-form + toast Undo.
 - **B4 — Fechamento:** toggle "Auto" pós-mudança estrutural, E2E (aplicar layout → reload → persistido; busca→layout→snapshot), CHANGELOG + tag v0.5.0.
 
