@@ -20,6 +20,11 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', error, info?.componentStack);
+    // Console do navegador preserva o erro para diagnóstico em sessão
+    // (prova de valor: pegou o crash real do popover na v0.5 B3).
+    if (typeof window !== 'undefined') {
+      window.__lastBoundaryError = `${error?.message} ||| ${String(info?.componentStack ?? '').slice(0, 400)}`;
+    }
   }
 
   componentDidUpdate(prevProps) {

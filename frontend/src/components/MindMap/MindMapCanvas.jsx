@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import { ReactFlow, MiniMap, Controls, Background, Panel, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useShallow } from 'zustand/react/shallow';
@@ -7,13 +7,12 @@ import { toast } from 'sonner';
 import useMindMapStore from '../../store/mindMapStore';
 import CustomNode from './CustomNode';
 import Button from '../UI/Button';
-import Select from '../UI/Select';
-import { computeLayout, LAYOUT_SCHEMAS } from '../../layout/engine';
+import LayoutPopover from './LayoutPopover';
+import { computeLayout } from '../../layout/engine';
 
 const MindMapCanvas = () => {
   const wrapperRef = useRef(null);
   const { fitView } = useReactFlow();
-  const [layoutSchema, setLayoutSchema] = useState('balanced-lr');
 
   const {
     nodes, // Direct from store
@@ -25,6 +24,7 @@ const MindMapCanvas = () => {
     fetchAIConfig, // To fetch AI config on load
     applyLayoutPositions,
     restorePositions,
+    layoutMeta,
   } = useMindMapStore(useShallow((state) => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -35,6 +35,7 @@ const MindMapCanvas = () => {
     fetchAIConfig: state.fetchAIConfig,
     applyLayoutPositions: state.applyLayoutPositions,
     restorePositions: state.restorePositions,
+    layoutMeta: state.layoutMeta,
   })));
 
   // Fetch AI config when the canvas mounts, so it's ready
@@ -69,7 +70,7 @@ const MindMapCanvas = () => {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // Motor puro -> única escrita de posição em massa (snapshot p/ Undo escopado)
-    const positions = computeLayout(nodes, edges, { schema: layoutSchema });
+    const positions = computeLayout(nodes, edges, { schema: layoutMeta.schema });
     const previous = applyLayoutPositions(positions);
 
     // Transição animada + fitView; reduced-motion pula direto para o estado final
@@ -130,21 +131,15 @@ const MindMapCanvas = () => {
         </Panel>
 
         <Panel position="top-center" className="p-2">
-            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-2 py-1.5">
-                <Select
-                    value={layoutSchema}
-                    onChange={(e) => setLayoutSchema(e.target.value)}
-                    options={LAYOUT_SCHEMAS}
-                    className="text-xs w-52"
-                    aria-label="Schema do layout"
-                />
+            <div className="flex items-center gap-2">
+                <LayoutPopover />
                 <Button
                     onClick={handleAutoOrganizar}
                     variant="primary"
-                    className="text-xs py-1.5 px-3 shrink-0"
-                    title={`Organiza o mapa no schema escolhido (${layoutSchema})`}
+                    className="text-xs py-1.5 px-3 shadow-lg"
+                    title={`Aplica o schema ativo agora (${layoutMeta.schema})`}
                 >
-                    ⚡ Auto-organizar
+                    ⚡ Organizar
                 </Button>
             </div>
         </Panel>

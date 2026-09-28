@@ -2,6 +2,19 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.5.0] — 2026-09-28
+
+### Adicionado (épico Layout Engine — ver docs/design/layout-engine.md)
+
+- **Motor de layout automático**: `computeLayout` puro (grafo + schema → posições), determinístico bit a bit, sobre o dagre; tamanhos de nós de `node.measured` com fallback determinístico para não-medidos.
+- **Layout balanceado Left-Right/Up-Down** (estilo XMind/niMind): partição gulosa dos filhos da raiz por peso de subárvore + espelhamento do lado A sobre dois dagres LR. Regra de dono: filhos diretos da raiz nunca mudam de lado por cross-link.
+- **6 schemas** no seletor: 4 direções (LR/RL/TB/BT) + 2 balanceados; **⚡ Auto-organizar** com transição animada (350ms), `fitView` e respeito a `prefers-reduced-motion`.
+- **Presets visuais (grade estilo × densidade)**: curved/direct/cornered × tree/list — mini-SVGs autorais no popover; aplica estilo de aresta em todo o mapa (inclusive arestas novas) e densidade compacta do nó.
+- **Free-form**: congela as posições atuais e limpa o estilo; **Auto: ON** reorganiza sozinho após mudanças estruturais (nunca durante drag).
+- **Undo escopado**: toast "Layout aplicado — Desfazer" (5s) via `applyLayoutPositions` (snapshot → único comando para o futuro histórico v0.2.5).
+- **Persistência**: `document.meta.layout` no blob (schema, edgeType, compact) — layout sobrevive ao reload.
+- **Testes**: 20 novos no motor de layout (determinismo, pureza, partição gulosa, fixtures assimétricas, cross-links inter-lados, UD) — 45 unitários no total; E2Es de persistência cobrem layout salvo via reload.
+
 ## [0.3.1] — 2026-09-28
 
 ### Hardening (auditoria adversarial pré-Layout)
