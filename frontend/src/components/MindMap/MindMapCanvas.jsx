@@ -1,13 +1,20 @@
-import React, { useCallback, useMemo, useEffect } from 'react';
-import { ReactFlow, MiniMap, Controls, Background, Panel } from '@xyflow/react';
+import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
+import { ReactFlow, MiniMap, Controls, Background, Panel, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useShallow } from 'zustand/react/shallow';
+import { toast } from 'sonner';
 
 import useMindMapStore from '../../store/mindMapStore';
 import CustomNode from './CustomNode';
 import Button from '../UI/Button';
+import Select from '../UI/Select';
+import { computeLayout, LAYOUT_DIRECTIONS } from '../../layout/engine';
 
 const MindMapCanvas = () => {
+  const wrapperRef = useRef(null);
+  const { fitView } = useReactFlow();
+  const [direction, setDirection] = useState('LR');
+
   const {
     nodes, // Direct from store
     edges, // Direct from store
@@ -16,6 +23,8 @@ const MindMapCanvas = () => {
     connectNodes,  // Store's handler for manual connections (valida ciclo/duplicata)
     addNode,       // Store's handler for adding new nodes
     fetchAIConfig, // To fetch AI config on load
+    applyLayoutPositions,
+    restorePositions,
   } = useMindMapStore(useShallow((state) => ({
     nodes: state.nodes,
     edges: state.edges,
@@ -24,6 +33,8 @@ const MindMapCanvas = () => {
     connectNodes: state.connectNodes,
     addNode: state.addNode,
     fetchAIConfig: state.fetchAIConfig,
+    applyLayoutPositions: state.applyLayoutPositions,
+    restorePositions: state.restorePositions,
   })));
 
   // Fetch AI config when the canvas mounts, so it's ready
@@ -53,8 +64,37 @@ const MindMapCanvas = () => {
     // maxZoom: 1.5, // Don't zoom in too much
   };
 
+  const handleAutoOrganizar = () => {
+    if (nodes.length === 0) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Motor puro -> única escrita de posição em massa (snapshot p/ Undo escopado)
+    const positions = computeLayout(nodes, edges, { direction });
+    const previous = applyLayoutPositions(positions);
+
+    // Transição animada + fitView; reduced-motion pula direto para o estado final
+    if (!reducedMotion && wrapperRef.current) {
+      wrapperRef.current.classList.add('layout-animating');
+      setTimeout(() => wrapperRef.current?.classList.remove('layout-animating'), 400);
+    }
+    setTimeout(() => {
+      fitView({ duration: reducedMotion ? 0 : 300, padding: 0.2 });
+    }, reducedMotion ? 30 : 380);
+
+    toast.success('Layout aplicado', {
+      duration: 5000,
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          restorePositions(previous);
+          setTimeout(() => fitView({ duration: reducedMotion ? 0 : 300, padding: 0.2 }), 50);
+        },
+      },
+    });
+  };
+
   return (
-    <div style={{ height: '100%', width: '100%', position: 'relative' }} className="mindmap-canvas-container">
+    <div ref={wrapperRef} style={{ height: '100%', width: '100%', position: 'relative' }} className="mindmap-canvas-container">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -87,6 +127,26 @@ const MindMapCanvas = () => {
             <Button onClick={handleAddRootNode} variant="primary" className="shadow-lg text-xs py-1.5 px-3">
                 Adicionar Nó Raiz
             </Button>
+        </Panel>
+
+        <Panel position="top-center" className="p-2">
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg px-2 py-1.5">
+                <Select
+                    value={direction}
+                    onChange={(e) => setDirection(e.target.value)}
+                    options={LAYOUT_DIRECTIONS}
+                    className="text-xs w-44"
+                    aria-label="Direção do layout"
+                />
+                <Button
+                    onClick={handleAutoOrganizar}
+                    variant="primary"
+                    className="text-xs py-1.5 px-3 shrink-0"
+                    title={`Organiza o mapa na direção escolhida (${direction})`}
+                >
+                    ⚡ Auto-organizar
+                </Button>
+            </div>
         </Panel>
 
       </ReactFlow>

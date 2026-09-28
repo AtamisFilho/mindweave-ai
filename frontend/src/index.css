@@ -113,6 +113,16 @@ code {
   animation: modalShow 0.2s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
 }
 
+/* Aplicação de layout: transição suave das posições dos nós (v0.5) */
+.layout-animating .react-flow__node {
+  transition: transform 350ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .layout-animating .react-flow__node {
+    transition: none;
+  }
+}
+
 /* Customizações dos controles do React Flow (claro/escuro) */
 .react-flow__controls_custom button {
     background-color: white; /* Ensure controls are visible on dark backgrounds */

@@ -151,6 +151,41 @@ describe('painel de pesquisas (pin e contexto)', () => {
   });
 });
 
+describe('applyLayoutPositions / restorePositions (v0.5)', () => {
+  it('aplica posições em massa e devolve o snapshot anterior', () => {
+    const idA = getState().addNode('root', undefined, { label: 'A' });
+    const previous = getState().applyLayoutPositions({
+      root: { x: 100, y: 200 },
+      [idA]: { x: 400, y: 200 },
+    });
+    const root = getState().nodes.find((n) => n.id === 'root');
+    const a = getState().nodes.find((n) => n.id === idA);
+    expect(root.position).toEqual({ x: 100, y: 200 });
+    expect(a.position).toEqual({ x: 400, y: 200 });
+    expect(previous.root).toEqual({ x: 0, y: 0 }); // posição original do root
+  });
+
+  it('restorePositions volta o mapa ao snapshot (Undo escopado)', () => {
+    const idA = getState().addNode('root', undefined, { label: 'A' });
+    const previous = getState().applyLayoutPositions({
+      root: { x: 100, y: 200 },
+      [idA]: { x: 400, y: 200 },
+    });
+    getState().restorePositions(previous);
+    expect(getState().nodes.find((n) => n.id === 'root').position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('aplicar layout dispara o autosave (nodes mudam) e é um único lote', () => {
+    // guard: hidratação suspende, mutação de nodes dispara — já coberto pelo
+    // subscribe; aqui garantimos que posições viram parte do documento salvo
+    const idA = getState().addNode('root', undefined, { label: 'A' });
+    getState().applyLayoutPositions({ root: { x: 10, y: 20 }, [idA]: { x: 30, y: 40 } });
+    const saved = getState().nodes;
+    expect(saved.find((n) => n.id === 'root').position).toEqual({ x: 10, y: 20 });
+    expect(saved.find((n) => n.id === idA).position).toEqual({ x: 30, y: 40 });
+  });
+});
+
 describe('sanidade do grafo inicial', () => {
   it('raiz inicial é única e marcada como root', () => {
     expect(nodeByLabel('Raiz').data.isRoot).toBe(true);

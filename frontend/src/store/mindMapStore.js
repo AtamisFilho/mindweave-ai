@@ -569,6 +569,34 @@ const useMindMapStore = create((set, get) => ({
     });
   },
 
+  // --- Layout automático (v0.5) ---
+  // ÚNICO caminho para escritas de posição em massa (Diretriz d do Tech Lead):
+  // snapshot antes + aplicação atômica -> o futuro undo/redo (v0.2.5) captura
+  // a aplicação do layout como UM comando, e o autosave enxerga um único lote.
+  applyLayoutPositions: (positionsById) => {
+    const previous = Object.fromEntries(
+      get().nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
+    );
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        positionsById[n.id]
+          ? { ...n, position: { x: positionsById[n.id].x, y: positionsById[n.id].y } }
+          : n,
+      ),
+    }));
+    return previous; // snapshot para restorePositions (Undo escopado)
+  },
+
+  restorePositions: (previousPositionsById) => {
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        previousPositionsById[n.id]
+          ? { ...n, position: { ...previousPositionsById[n.id] } }
+          : n,
+      ),
+    }));
+  },
+
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
   clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
