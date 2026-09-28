@@ -77,16 +77,16 @@ async def ai_provider_error_handler(request: Request, exc: AIProviderError):
         "Falha de IA: error_code=%s provider=%s http=%s",
         exc.code.value, exc.provider, exc.status_code,
     )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "detail": {
-                "error_code": exc.code.value,
-                "message": exc.message,
-                "provider": exc.provider,
-            }
-        },
-    )
+    detail = {
+        "error_code": exc.code.value,
+        "message": exc.message,
+        "provider": exc.provider,
+    }
+    if getattr(exc, "trail", None):
+        detail["fallback_trail"] = exc.trail
+    if getattr(exc, "retry_after", None):
+        detail["retry_after"] = exc.retry_after
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
 @app.get("/")

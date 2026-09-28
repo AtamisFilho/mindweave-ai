@@ -22,6 +22,7 @@ class ErrorCode(str, Enum):
     CONTEXT_TOO_LARGE = "CONTEXT_TOO_LARGE"              # 400 — prompt excede o contexto
     KEY_NOT_CONFIGURED = "KEY_NOT_CONFIGURED"            # 400 — chave ausente no servidor
     UNKNOWN_PROVIDER = "UNKNOWN_PROVIDER"                # 400 — provedor inexistente
+    ALL_PROVIDERS_FAILED = "ALL_PROVIDERS_FAILED"        # 503 — toda a cadeia falhou
 
 
 class ErrorKind(str, Enum):
@@ -38,6 +39,7 @@ class ErrorKind(str, Enum):
     CONTEXT_TOO_LARGE = "CONTEXT_TOO_LARGE"
     NETWORK_ERROR = "NETWORK_ERROR"
     PROVIDER_ERROR = "PROVIDER_ERROR"
+    KEY_NOT_CONFIGURED = "KEY_NOT_CONFIGURED"
     UNKNOWN = "UNKNOWN"
 
 
@@ -49,6 +51,7 @@ KIND_TO_RESPONSE: dict["ErrorKind", tuple["ErrorCode", int]] = {
     ErrorKind.MODEL_NOT_FOUND: (ErrorCode.MODEL_NOT_FOUND, 502),
     ErrorKind.CONTEXT_TOO_LARGE: (ErrorCode.CONTEXT_TOO_LARGE, 400),
     ErrorKind.NETWORK_ERROR: (ErrorCode.PROVIDER_UNREACHABLE, 503),
+    ErrorKind.KEY_NOT_CONFIGURED: (ErrorCode.KEY_NOT_CONFIGURED, 400),
     ErrorKind.PROVIDER_ERROR: (ErrorCode.PROVIDER_REQUEST_FAILED, 502),
     ErrorKind.UNKNOWN: (ErrorCode.PROVIDER_REQUEST_FAILED, 500),
 }

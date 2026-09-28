@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -13,18 +13,26 @@ class AIResearchRequest(BaseModel):
     nodeId: str
     nodeContent: str
     ancestorContext: list[NodeContext] = []
-    provider: Literal['ollama', 'openai', 'google'] | None = 'ollama'
+    # DEPRECATED (v0.3): fixa UM provedor sem fallback. None = usa a cadeia.
+    provider: Literal['ollama', 'openai', 'google'] | None = None
+    # v0.4: primeiro da cadeia (fallbacks seguem para os demais)
+    preferred_provider: str | None = None
     model_name: str | None = None # Allow specifying model per request
 
 class AIResearchResponse(BaseModel):
     nodeId: str
     researchSummary: str
+    provider_used: str
+    fallback_trail: list[dict[str, Any]] = []
 
 class AISuggestNodesRequest(BaseModel):
     nodeId: str
     nodeContent: str
     ancestorContext: list[NodeContext] = []
-    provider: Literal['ollama', 'openai', 'google'] | None = 'ollama'
+    # DEPRECATED (v0.3): fixa UM provedor sem fallback. None = usa a cadeia.
+    provider: Literal['ollama', 'openai', 'google'] | None = None
+    # v0.4: primeiro da cadeia (fallbacks seguem para os demais)
+    preferred_provider: str | None = None
     model_name: str | None = None # Allow specifying model per request
 
 class AISuggestedNode(BaseModel):
@@ -33,6 +41,8 @@ class AISuggestedNode(BaseModel):
 class AISuggestNodesResponse(BaseModel):
     nodeId: str
     suggestedNodes: list[AISuggestedNode]
+    provider_used: str
+    fallback_trail: list[dict[str, Any]] = []
 
 class OllamaConfig(BaseModel):
     baseUrl: str = settings.OLLAMA_BASE_URL
@@ -49,6 +59,5 @@ class AIProviderConfigResponse(BaseModel): # Separate model for responses
     selectedProvider: Literal['ollama', 'openai', 'google']
     ollamaConfig: OllamaConfig
     # We don't include API keys in responses for security
-    # We can add flags like 'isOpenAiKeySet' if needed by frontend
     isOpenAiKeySet: bool = False
     isGoogleKeySet: bool = False

@@ -65,13 +65,27 @@ async def execute_chain(
     *,
     model: str | None = None,
     preferred: str | None = None,
+    only: str | None = None,
 ) -> dict:
     """Executa o prompt na cadeia de provedores.
 
-    Retorna {"content", "provider", "provider_label", "model", "trail"}.
-    Levanta AIProviderError (com trail) se TODOS falharem.
+    only: trava a execução em UM provedor (campo legado 'provider' — sem
+    fallback). Retorna {"content", "provider", "provider_label", "model",
+    "trail"}. Levanta AIProviderError (com trail) se TODOS falharem.
     """
-    chain = build_chain(preferred)
+    if only:
+        if only not in PROVIDERS:
+            from app.core.errors import ErrorKind as _EK
+            raise AIProviderError(
+                ErrorCode.UNKNOWN_PROVIDER,
+                f"Provedor desconhecido: {only}",
+                only,
+                status_code=400,
+                kind=_EK.UNKNOWN,
+            )
+        chain = [only]
+    else:
+        chain = build_chain(preferred)
     if not chain:
         raise AIProviderError(
             ErrorCode.KEY_NOT_CONFIGURED,
@@ -87,7 +101,12 @@ async def execute_chain(
     for provider_id in chain:
         provider = PROVIDERS[provider_id]
         if provider_in_cooldown(provider_id):
-            trail.append({"provider": provider.label, "skipped": "cooldown"})
+            trail.append({
+                "provider": provider.label,
+                "kind": ErrorKind.RATE_LIMIT.value,  # pulado por cooldown recente
+                "message": "Provedor em cooldown (falha recente) — pulado.",
+                "skipped": True,
+            })
             continue
 
         model_to_use = model if (model and provider_id == preferred) else provider.default_model
@@ -112,17 +131,21 @@ async def execute_chain(
 
             # cooldown conforme o tipo (RateLimit curto; Quota até o reset)
             retry_after = getattr(exc, "retry_after", None)
+            cooldown_until = None
             if kind is ErrorKind.QUOTA_EXHAUSTED:
                 _COOLDOWNS[provider_id] = _now() + (retry_after or _COOLDOWN_QUOTA_DEFAULT)
+                cooldown_until = int(_COOLDOWNS[provider_id])
             elif kind is ErrorKind.RATE_LIMIT:
                 _COOLDOWNS[provider_id] = _now() + (retry_after or _COOLDOWN_RATE_LIMIT)
+                cooldown_until = int(_COOLDOWNS[provider_id])
+            trail[-1]["cooldown_until"] = cooldown_until
             last_error = exc
 
     raise AIProviderError(
-        ErrorCode.PROVIDER_REQUEST_FAILED,
+        ErrorCode.ALL_PROVIDERS_FAILED,
         "Todos os provedores da cadeia falharam.",
         "chain",
-        status_code=502,
+        status_code=503,
         kind=ErrorKind.PROVIDER_ERROR,
         trail=trail,
     ) from last_error
