@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 45000,
   fullyParallel: false, // testes de persistência compartilham o /last do backend real
+  workers: 1, // e sem paralelismo ENTRE arquivos: o beforeEach de um limpa o mapa do outro
   reporter: [['list']],
   use: {
     baseURL: 'http://localhost:5173',
