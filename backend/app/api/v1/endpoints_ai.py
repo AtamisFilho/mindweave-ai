@@ -13,7 +13,7 @@ from app.models.ai_models import (
     AISuggestNodesResponse,
     OllamaConfig,
 )
-from app.services import ai_service
+from app.services import ai_service, keys_service
 
 logger = logging.getLogger("app.api")
 
@@ -105,10 +105,12 @@ async def update_ai_config(config_update: AIProviderConfig = Body(...)):
 
     if config_update.openaiApiKey:
         ai_service.set_openai_api_key(config_update.openaiApiKey)
+        keys_service.set_key("openai", config_update.openaiApiKey)  # espelho criptografado (v0.4 B0)
         logger.info("Chave OpenAI atualizada via endpoint de configuração.")
 
     if config_update.googleApiKey:
         ai_service.set_google_api_key(config_update.googleApiKey)
+        keys_service.set_key("google", config_update.googleApiKey)  # espelho criptografado (v0.4 B0)
         logger.info("Chave Google atualizada via endpoint de configuração.")
 
     logger.info(
