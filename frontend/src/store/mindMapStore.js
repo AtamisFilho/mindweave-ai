@@ -18,6 +18,7 @@ import {
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
+import { computeLayout } from '../layout/engine';
 
 // --- Snapshot offline (localStorage) ---
 // Se o autosave falhar por rede, o estado vai para cá; o replay acontece
@@ -125,6 +126,10 @@ const useMindMapStore = create((set, get) => ({
   lastSavedAt: null,
   pendingLocal: false,       // existe snapshot no localStorage aguardando sync
 
+  // --- Layout (v0.5) ---
+  layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
+  autoLayout: false,         // relayout pós-mudança estrutural (B4)
+
 
   // --- React Flow specific actions ---
   onNodesChange: (changes) =>
@@ -150,6 +155,7 @@ const useMindMapStore = create((set, get) => ({
     })),
   // Conexão manual (drag entre handles): valida raiz/duplicata/ciclo e grava
   // aresta + cache de posicionamento atomicamente. Cross-links são permitidos (DAG).
+  // O tipo da aresta segue o preset visual ativo (curved/direct/cornered).
   connectNodes: (params) => {
     const { source, target } = params;
     if (!source || !target || source === target) return false;
@@ -158,8 +164,9 @@ const useMindMapStore = create((set, get) => ({
     if (!targetNode || targetNode.data.isRoot) return false; // raiz não vira filha
     if (state.edges.some(e => e.source === source && e.target === target)) return false;
     if (wouldCreateCycle(state.edges, source, target)) return false;
+    const edgeType = state.layoutMeta?.edgeType ?? undefined;
     set((s) => ({
-      edges: rfAddEdge({ ...params, type: 'smoothstep', animated: true, style: { strokeWidth: 2 } }, s.edges),
+      edges: rfAddEdge({ ...params, type: edgeType, animated: true, style: { strokeWidth: 2 } }, s.edges),
       nodes: s.nodes.map(n => (n.id === target ? { ...n, data: { ...n.data, parentId: source } } : n)),
     }));
     return true;
@@ -346,9 +353,19 @@ const useMindMapStore = create((set, get) => ({
       mapVersion: map.version,
       lastSavedAt: Date.now(),
       saveState: 'saved',
+      layoutMeta: map.document.meta?.layout ?? { schema: 'balanced-lr', edgeType: null, compact: false },
       researchHistory: [],
       researchPanelNodeId: null,
     }),
+
+  _documentFromState: () => {
+    const s = get();
+    return {
+      nodes: s.nodes,
+      edges: s.edges,
+      meta: { layout: s.layoutMeta },
+    };
+  },
 
   // Fricção Zero: carrega o último mapa; 404 -> cria "Mapa sem título" sem UI;
   // backend fora -> canvas default + snapshot offline.
@@ -368,12 +385,7 @@ const useMindMapStore = create((set, get) => ({
       if (error?.response?.status === 404) {
         await get().createNewMap(); // primeiro acesso
       } else {
-        writePending({
-          mapId: null,
-          title: get().mapTitle,
-          document: { nodes: get().nodes, edges: get().edges },
-          expected_version: null,
-        });
+        writePending(get()._documentFromState());
         set({ saveState: 'offline', pendingLocal: true });
       }
     } finally {
@@ -397,7 +409,7 @@ const useMindMapStore = create((set, get) => ({
 
   createNewMap: async () => {
     set({ hydrating: true });
-    const document = { nodes: [freshRootNode()], edges: [] };
+    const document = { nodes: [freshRootNode()], edges: [], meta: { layout: { schema: 'balanced-lr', edgeType: null, compact: false } } };
     try {
       const created = await apiCreateMap({ title: 'Mapa sem título', document });
       get()._applyServerMap(created);
@@ -428,7 +440,7 @@ const useMindMapStore = create((set, get) => ({
     clearTimeout(autosaveTimer);
     const s = get();
     if (s.hydrating) return;
-    const document = { nodes: s.nodes, edges: s.edges };
+    const document = s._documentFromState();
     set({ saveState: 'saving' });
     try {
       if (!s.currentMapId) {
@@ -472,7 +484,7 @@ const useMindMapStore = create((set, get) => ({
         writePending({
           mapId: s.currentMapId,
           title: s.mapTitle,
-          document,
+          document: s._documentFromState(),
           expected_version: s.mapVersion,
         });
         set({ saveState: 'offline', pendingLocal: true });
@@ -569,6 +581,55 @@ const useMindMapStore = create((set, get) => ({
     });
   },
 
+  // --- Layout automático (v0.5) ---
+  // ÚNICO caminho para escritas de posição em massa (Diretriz d do Tech Lead):
+  // snapshot antes + aplicação atômica -> o futuro undo/redo (v0.2.5) captura
+  // a aplicação do layout como UM comando, e o autosave enxerga um único lote.
+  applyLayoutPositions: (positionsById) => {
+    const previous = Object.fromEntries(
+      get().nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
+    );
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        positionsById[n.id]
+          ? { ...n, position: { x: positionsById[n.id].x, y: positionsById[n.id].y } }
+          : n,
+      ),
+    }));
+    return previous; // snapshot para restorePositions (Undo escopado)
+  },
+
+  restorePositions: (previousPositionsById) => {
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        previousPositionsById[n.id]
+          ? { ...n, position: { ...previousPositionsById[n.id] } }
+          : n,
+      ),
+    }));
+  },
+
+  // Preset visual (v0.5 B3): estilo de aresta + densidade — afeta TODO o mapa
+  // e as arestas criadas daqui em diante. Posições só mudam no ⚡ Auto-organizar.
+  setVisualPreset: ({ edgeType, compact }) =>
+    set((s) => ({
+      layoutMeta: { ...s.layoutMeta, edgeType: edgeType ?? null, compact: !!compact },
+      edges: s.edges.map((e) => ({ ...e, type: edgeType ?? undefined })),
+    })),
+
+  setLayoutSchema: (schema) =>
+    set((s) => ({ layoutMeta: { ...s.layoutMeta, schema } })),
+
+  setAutoLayout: (autoLayout) => set({ autoLayout: !!autoLayout }),
+
+  // B4: relayout silencioso pós-mudança estrutural (chamado pelo subscribe)
+  relayoutAuto: () => {
+    const s = get();
+    if (!s.autoLayout || s.hydrating || s.nodes.length === 0) return;
+    const positions = computeLayout(s.nodes, s.edges, { schema: s.layoutMeta.schema });
+    s.applyLayoutPositions(positions);
+  },
+
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
   clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
@@ -607,6 +668,13 @@ const useMindMapStore = create((set, get) => ({
 // Guarda: durante a hidratação (bootstrap/load/create) o autosave fica suspenso.
 let autosaveTimer = null;
 
+// B4: assinatura ESTRUTURAL (ids) — muda ao adicionar/remover/conectar,
+// mas NÃO em drag de posição: o auto-layout não briga com o usuário.
+const structuralSignature = (s) =>
+  `${s.nodes.length}:${s.nodes.map((n) => n.id).join(',')}|${s.edges.length}:${s.edges.map((e) => e.id).join(',')}`;
+
+let autoLayoutTimer = null;
+
 useMindMapStore.subscribe((state, prev) => {
   if (state.hydrating) return;
   if (
@@ -618,6 +686,12 @@ useMindMapStore.subscribe((state, prev) => {
     autosaveTimer = setTimeout(() => {
       useMindMapStore.getState().saveNow();
     }, 1000);
+
+    // v0.5 B4: toggle "Auto" — relayout silencioso após mudança estrutural
+    if (state.autoLayout && structuralSignature(state) !== structuralSignature(prev)) {
+      clearTimeout(autoLayoutTimer);
+      autoLayoutTimer = setTimeout(() => useMindMapStore.getState().relayoutAuto(), 800);
+    }
   }
 });
 

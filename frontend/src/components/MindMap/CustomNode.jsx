@@ -5,12 +5,13 @@ import useMindMapStore from '../../store/mindMapStore';
 import Button from '../UI/Button';
 
 const CustomNode = ({ id, data, selected }) => {
-  const { updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode } = useMindMapStore(useShallow((state) => ({
+  const { updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode, compactNodes } = useMindMapStore(useShallow((state) => ({
     updateNodeLabel: state.updateNodeLabel,
     performDeepResearch: state.performDeepResearch,
     suggestNewNodes: state.suggestNewNodes,
     aiLoading: state.aiLoading,
     addNode: state.addNode, // For adding child nodes via button
+    compactNodes: state.layoutMeta?.compact ?? false, // densidade "list" (v0.5)
   })));
 
   const [isEditing, setIsEditing] = useState(data.isNew || false); 
@@ -73,9 +74,13 @@ const CustomNode = ({ id, data, selected }) => {
     addNode(id, undefined, { label: 'Novo Filho' }); // Pass parentId (current node id)
   };
   
-  const nodeBaseStyle = `bg-linear-to-br from-sky-500 to-sky-600 dark:from-sky-600 dark:to-sky-700
-                         shadow-lg rounded-lg p-3 text-white
-                         min-w-[180px] max-w-[280px] text-center relative group`; // Added group for potential hover effects
+  // Densidade "list" (v0.5): nó compacto para caber mais por tela
+  const nodeBaseStyle = compactNodes
+    ? `bg-linear-to-br from-sky-500 to-sky-600 dark:from-sky-600 dark:to-sky-700
+       shadow-md rounded-md p-1 text-white min-w-[120px] max-w-[160px] text-xs text-center relative group`
+    : `bg-linear-to-br from-sky-500 to-sky-600 dark:from-sky-600 dark:to-sky-700
+       shadow-lg rounded-lg p-3 text-white
+       min-w-[180px] max-w-[280px] text-center relative group`; // Added group for potential hover effects
   const nodeSelectedStyle = selected ? "ring-2 ring-yellow-400 dark:ring-yellow-500 ring-offset-1 ring-offset-gray-100 dark:ring-offset-gray-800" : "border border-transparent";
 
   return (

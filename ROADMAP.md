@@ -2,7 +2,7 @@
 
 Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistência** — mapas salvos automaticamente em SQLite (documento + índice FTS5), Fricção Zero no boot, resiliência offline. IA de Pesquisa Profunda e Sugestão de Nós via Ollama/OpenAI/Gemini.
 
-## v0.3 — Persistência (SQLite)
+## v0.2 — Robustez
 
 - [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
 - [x] **Painel "research"** ✅ v0.2 — painel híbrido: segue o "último nó pesquisado" (não a seleção do canvas), com pin 📍 para travar contexto, visão "Este nó"/"Todas", Markdown (react-markdown + remark-gfm + typography), copiar, tombstone para nós removidos e empty states
@@ -26,13 +26,6 @@ Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistênci
 
 - [ ] **Undo/redo** do mapa (Command pattern no store) — adiado da v0.2 por decisão de escopo
 
-## v0.3 — Persistência (SQLite)
-
-- [ ] SQLAlchemy + SQLite no backend FastAPI
-- [ ] API `/api/v1/maps`: CRUD de mapas (nodes/edges serializados em JSON)
-- [ ] UI: salvar/carregar/renomear/excluir múltiplos mapas
-- [ ] Autosave local (debounce) + recuperação ao reabrir
-
 ## v0.4 — IA avançada
 
 - [ ] **Gerar mapa inteiro a partir de um tópico** (não só expandir nós)
@@ -42,11 +35,19 @@ Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistênci
 - [ ] Seleção múltipla de nós → expandir vários de uma vez
 - [ ] Configuração de modelo por requisição na UI (hoje só via store do Ollama)
 
+### v0.5 — Layout Engine (esquemas estilo niMind) — ver [docs/design/layout-engine.md](docs/design/layout-engine.md)
+
+- [ ] **Motor de posicionamento** (dagre na v1; interface pronta para elkjs) — movido da v1.0
+- [ ] Direções Up/Down/Left/Right + **balanceadas Left-Right/Up-Down** (partição de subárvores + espelhamento)
+- [ ] **9 esquemas visuais** = estilo de aresta (curved/direct/cornered) × densidade (tree/list compacta)
+- [ ] UI: popover no canvas com direções + mini-SVGs + botão "Auto-organizar" + toggle "Auto"
+- [ ] `document.meta.layout` persistido por mapa; Free-form congela posições; Undo de 1 clique
+- [ ] Escrita de posições sempre via `applyLayoutPositions` (preparado para o undo da v0.2.5)
+
 ## v1.0 — Escala
 
 - [ ] Export do mapa: PNG, Markdown (outline), OPML
 - [ ] Compartilhamento por link (mapas somente leitura)
 - [ ] Multiusuário: Postgres + autenticação (OAuth/e-mail)
 - [ ] Docker Compose (frontend + backend + Ollama opcional)
-- [ ] Layout automático de árvores (dagre/elk)
 - [ ] Armazenamento seguro e persistente de chaves de API no backend
