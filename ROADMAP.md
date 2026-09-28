@@ -35,14 +35,14 @@ Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistênci
 - [ ] Seleção múltipla de nós → expandir vários de uma vez
 - [ ] Configuração de modelo por requisição na UI (hoje só via store do Ollama)
 
-### v0.5 — Layout Engine (esquemas estilo niMind) — ver [docs/design/layout-engine.md](docs/design/layout-engine.md)
+### v0.5 — Layout Engine (esquemas estilo niMind) ✅ v0.5.0 — ver [docs/design/layout-engine.md](docs/design/layout-engine.md)
 
-- [ ] **Motor de posicionamento** (dagre na v1; interface pronta para elkjs) — movido da v1.0
-- [ ] Direções Up/Down/Left/Right + **balanceadas Left-Right/Up-Down** (partição de subárvores + espelhamento)
-- [ ] **9 esquemas visuais** = estilo de aresta (curved/direct/cornered) × densidade (tree/list compacta)
-- [ ] UI: popover no canvas com direções + mini-SVGs + botão "Auto-organizar" + toggle "Auto"
-- [ ] `document.meta.layout` persistido por mapa; Free-form congela posições; Undo de 1 clique
-- [ ] Escrita de posições sempre via `applyLayoutPositions` (preparado para o undo da v0.2.5)
+- [x] **Motor de posicionamento** (dagre na v1; interface pronta para elkjs) — movido da v1.0
+- [x] Direções Up/Down/Left/Right + **balanceadas Left-Right/Up-Down** (partição de subárvores por peso + espelhamento)
+- [x] **9 esquemas visuais** = estilo de aresta (curved/direct/cornered) × densidade (tree/list compacta)
+- [x] UI: popover no canvas com direções + mini-SVGs + botão "Auto-organizar" + toggle "Auto"
+- [ ] `document.meta.layout` persistido por mapa; Free-form congela posições; Undo de 1 clique — **parcial**: posições + edgeType/compact persistem ✅; Undo de 1 clique entra com o v0.2.5
+- [x] Escrita de posições sempre via `applyLayoutPositions` (preparado para o undo da v0.2.5)
 
 ## v1.0 — Escala
 
