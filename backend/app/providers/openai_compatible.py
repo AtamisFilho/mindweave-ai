@@ -1,0 +1,80 @@
+"""Adapter para provedores OpenAI-compatible.
+
+Cobre com UMA classe: Groq, OpenRouter, Cerebras, DeepSeek, OpenAI e
+LM Studio (local) — basta base_url + modelo default. LM Studio usa
+api_key placeholder (o header Authorization é exigido, o valor não).
+"""
+import httpx
+
+from app.providers.base import AIProviderBase, ErrorKind, ProviderCallError
+
+_HTTP_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
+
+class OpenAICompatibleProvider(AIProviderBase):
+    def __init__(self, *, id: str, label: str, base_url: str, default_model: str,
+                 requires_key: bool = True, local: bool = False,
+                 daily_quota_markers: tuple[str, ...] = ()):
+        self.id = id
+        self.label = label
+        self.base_url = base_url
+        self.default_model = default_model
+        self.requires_key = requires_key
+        self.local = local
+        # 429 cujo corpo contém estes marcadores é COTA DIÁRIA (não RPM)
+        self.daily_quota_markers = daily_quota_markers
+
+    async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
+        if self.requires_key and not api_key:
+            # o chain executor pula provedores sem chave ANTES de chamar;
+            # isso é rede de segurança
+            raise ProviderCallError(self.id, ErrorKind.UNKNOWN, "api_key ausente")
+
+        headers = {"Authorization": f"Bearer {api_key or 'lm-studio'}"}
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.base_url.rstrip('/')}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+        except httpx.TimeoutException as exc:
+            raise ProviderCallError(
+                self.id, ErrorKind.NETWORK_ERROR,
+                f"{self.label} não respondeu a tempo (timeout).",
+                status_code=504,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderCallError(
+                self.id, ErrorKind.NETWORK_ERROR,
+                f"Não foi possível conectar ao {self.label}.",
+                status_code=503,
+            ) from exc
+
+        if response.status_code != 200:
+            raise ProviderCallError(
+                self.id,
+                self.classify(response.status_code, response.text),
+                f"{self.label} retornou HTTP {response.status_code}.",
+                status_code=self._map_status(response.status_code, response),
+                retry_after=self.retry_after_from(response),
+            )
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+    def _map_status(self, status_code: int, response: httpx.Response) -> int:
+        """HTTP que o MindWeave devolve ao frontend para o erro do provedor."""
+        kind = self.classify(status_code, response.text)
+        if kind is ErrorKind.QUOTA_EXHAUSTED or kind is ErrorKind.RATE_LIMIT:
+            return 429
+        if kind is ErrorKind.NETWORK_ERROR:
+            return 503
+        if kind in (ErrorKind.INVALID_KEY, ErrorKind.MODEL_NOT_FOUND, ErrorKind.PROVIDER_ERROR):
+            return 502
+        return 502
