@@ -26,7 +26,7 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
       - name: Testes (pytest)
-        run: pytest -q
+        run: python -m pytest -q
 
   frontend:
     name: Frontend (eslint + vitest + build)
