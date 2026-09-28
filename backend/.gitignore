@@ -2,3 +2,6 @@
 *.db
 *.db-wal
 *.db-shm
+
+# Segredo local da criptografia de chaves de API
+data/

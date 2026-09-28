@@ -1,4 +1,4 @@
-"""Modelo ORM da tabela maps.
+"""Modelos ORM: tabela maps (Híbrido Invertido) + api_keys (chaves em repouso).
 
 O campo `document` é o grafo completo {"nodes": [...], "edges": [...]} exatamente
 no formato que o frontend fala — fonte da verdade (Híbrido Invertido).
@@ -23,6 +23,23 @@ class MapRow(Base):
     title: Mapped[str] = mapped_column(String, nullable=False, default="Mapa sem título")
     document: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class APIKeyRow(Base):
+    """Chaves de API criptografadas em repouso (Fernet — app.core.crypto).
+
+    provider é o slug do provedor ('openai', 'groq', ...); o material da chave
+    NUNCA sai desta tabela em claro (só em memória no momento da chamada).
+    """
+
+    __tablename__ = "api_keys"
+
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

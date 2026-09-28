@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     )
     # HSTS: habilitar SOMENTE quando servir via HTTPS
     SECURITY_HSTS: bool = False
+    # Master key da criptografia de chaves (Fernet). Vazio = gerar/persistir
+    # segredo local em backend/data/secret.key
+    ENCRYPTION_SECRET: str | None = None
     # Adicionaremos mais configurações aqui depois (OpenAI Key, Google Key)
 
 settings = Settings()

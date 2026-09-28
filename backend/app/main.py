@@ -4,11 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import endpoints_ai, endpoints_maps
+from app.api.v1 import endpoints_ai, endpoints_keys, endpoints_maps
 from app.core.config import settings
 from app.core.errors import AIProviderError
 from app.db import init_db
-from app.services import ai_service
+from app.services import ai_service, keys_service
 from app.services.maps_service import MapVersionConflict
 
 logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolvimento
@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolviment
 logger = logging.getLogger("app")
 
 init_db()
+keys_service.migrate_env_keys()  # migração automática v0.3 (.env) -> banco criptografado
 
 app = FastAPI(title="MindWeave AI Backend")
 
@@ -49,6 +50,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
 app.include_router(endpoints_maps.router, prefix="/api/v1/maps", tags=["Maps"])
+app.include_router(endpoints_keys.router, prefix="/api/v1/ai/keys", tags=["AI Keys"])
 
 
 @app.exception_handler(MapVersionConflict)

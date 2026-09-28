@@ -2,6 +2,14 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado] — v0.4 (Bloco 0: fundação de criptografia)
+
+### Adicionado
+- **Chaves de API criptografadas em repouso**: tabela `api_keys` (provider PK + Fernet), master key derivada de `ENCRYPTION_SECRET` (.env) ou auto-gerada em `backend/data/secret.key` (gitignored).
+- **Endpoints `/api/v1/ai/keys`**: PUT (upsert), GET (metadados sem material), DELETE. Provedor desconhecido → 400 `UNKNOWN_PROVIDER`.
+- **Migração automática v0.3**: chaves de `OPENAI_API_KEY`/`GOOGLE_API_KEY` (.env) vão criptografadas para o banco no startup (idempotente); chaves salvas pela UI também são espelhadas no banco.
+- **Testes**: round-trip Fernet, isolamento por provedor, sigilo em logs e respostas (sem o material das chaves).
+
 ## [0.3.1] — 2026-09-28
 
 ### Hardening (auditoria adversarial pré-Layout)
