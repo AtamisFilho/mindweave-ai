@@ -8,6 +8,7 @@ export default defineConfig({
   timeout: 45000,
   fullyParallel: false, // testes de persistência compartilham o /last do backend real
   workers: 1, // e sem paralelismo ENTRE arquivos: o beforeEach de um limpa o mapa do outro
+  retries: process.env.CI ? 2 : 0, // runners do Actions são mais lentos — janelas de tempo estouram
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
     baseURL: 'http://localhost:5173',
