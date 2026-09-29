@@ -1,8 +1,8 @@
 # MindWeave AI — Roadmap
 
-Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistência** — mapas salvos automaticamente em SQLite (documento + índice FTS5), Fricção Zero no boot, resiliência offline. IA de Pesquisa Profunda e Sugestão de Nós via Ollama/OpenAI/Gemini.
+Estado atual (v0.4.0): **IA sempre-disponível** — cadeia de 8 provedores com fallback automático, chaves criptografadas, UI de configuração da cadeia. Somado ao que já existia: layout engine (dagre balanceado estilo niMind), persistência SQLite com autosave/offline/busca FTS5, DAG com cross-links.
 
-## v0.3 — Persistência (SQLite)
+## v0.2 — Robustez
 
 - [x] **Contexto hierárquico completo** ✅ v0.2 — implementado como **DAG**: as arestas do React Flow são a fonte única de verdade da hierarquia (cross-links permitidos, ciclos rejeitados, `parentId` restou como cache de posicionamento); `getAncestorContext` faz BFS pais-first com dedup
 - [x] **Painel "research"** ✅ v0.2 — painel híbrido: segue o "último nó pesquisado" (não a seleção do canvas), com pin 📍 para travar contexto, visão "Este nó"/"Todas", Markdown (react-markdown + remark-gfm + typography), copiar, tombstone para nós removidos e empty states
@@ -26,21 +26,32 @@ Estado atual (v0.3.0): aplicação funcional de ponta a ponta com **persistênci
 
 - [ ] **Undo/redo** do mapa (Command pattern no store) — adiado da v0.2 por decisão de escopo
 
-## v0.3 — Persistência (SQLite)
+### v0.4 — Provider Chain (fundação de IA) ✅ v0.4.0 — ver [docs/design/provider-chain.md](docs/design/provider-chain.md)
 
-- [ ] SQLAlchemy + SQLite no backend FastAPI
-- [ ] API `/api/v1/maps`: CRUD de mapas (nodes/edges serializados em JSON)
-- [ ] UI: salvar/carregar/renomear/excluir múltiplos mapas
-- [ ] Autosave local (debounce) + recuperação ao reabrir
+- [x] **8 provedores** com adaptadores próprios (sem LiteLLM): OpenAI-compatible cobre Groq/OpenRouter/Cerebras/DeepSeek/OpenAI/LM Studio; Gemini e Ollama nativos
+- [x] **Chain executor**: fallback automático, cooldowns por tipo (Retry-After respeitado), trilha de fallbacks na resposta
+- [x] **Chaves criptografadas** (Fernet + api_keys) com migração automática do .env; fonte única (globais em memória eliminados)
+- [x] **Classificação fina de erros** (8 tipos) — quota ≠ rate limit ≠ chave ≠ contexto
+- [x] **UI da Cadeia** (ordem ▲▼, toggles, Testar conexão, modelos locais, Resetar) + badge no header com fallback
+- [x] 'Configuração de modelo por requisição' — **subsumido**: cada provedor da cadeia carrega seu modelo
 
-## v0.4 — IA avançada
+## v0.4.5 — Experiência de IA
 
-- [ ] **Gerar mapa inteiro a partir de um tópico** (não só expandir nós)
+- [ ] **Streaming** das respostas (SSE) com a trilha de fallbacks em tempo real ('tentando groq… → gemini…')
 - [ ] **Chat com o mapa**: perguntas sobre o conteúdo do grafo
+- [ ] **Gerar mapa inteiro a partir de um tópico** (não só expandir nós)
 - [ ] **Resumo do mapa completo** (percurso hierárquico → LLM)
-- [ ] **Streaming** das respostas (SSE) com exibição progressiva
+- [ ] **Drag-and-drop na cadeia** (dnd-kit; ▲▼ permanece acessível)
 - [ ] Seleção múltipla de nós → expandir vários de uma vez
-- [ ] Configuração de modelo por requisição na UI (hoje só via store do Ollama)
+
+### v0.5 — Layout Engine (esquemas estilo niMind) ✅ v0.5.0 — ver [docs/design/layout-engine.md](docs/design/layout-engine.md)
+
+- [x] **Motor de posicionamento** (dagre na v1; interface pronta para elkjs) — movido da v1.0
+- [x] Direções Up/Down/Left/Right + **balanceadas Left-Right/Up-Down** (partição de subárvores por peso + espelhamento)
+- [x] **9 esquemas visuais** = estilo de aresta (curved/direct/cornered) × densidade (tree/list compacta)
+- [x] UI: popover no canvas com direções + mini-SVGs + botão "Auto-organizar" + toggle "Auto"
+- [x] Posições + estilo persistidos no documento (`meta.layout`); Free-form congela; Undo escopado
+- [x] Escrita de posições sempre via `applyLayoutPositions` (preparado para o undo/redo da v0.2.5)
 
 ## v1.0 — Escala
 

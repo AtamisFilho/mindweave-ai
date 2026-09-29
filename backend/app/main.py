@@ -8,7 +8,7 @@ from app.api.v1 import endpoints_ai, endpoints_chain, endpoints_keys, endpoints_
 from app.core.config import settings
 from app.core.errors import AIProviderError
 from app.db import init_db
-from app.services import ai_service, keys_service
+from app.services import keys_service
 from app.services.maps_service import MapVersionConflict
 
 logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolvimento
@@ -97,8 +97,8 @@ async def root():
         "Config: OLLAMA_BASE_URL=%s DEFAULT_OLLAMA_MODEL=%s openai_key_set=%s google_key_set=%s",
         settings.OLLAMA_BASE_URL,
         settings.DEFAULT_OLLAMA_MODEL,
-        ai_service.is_openai_key_set(),
-        ai_service.is_google_key_set(),
+        keys_service.get_key("openai") is not None,
+        keys_service.get_key("google") is not None,
     )
     return {"message": "Bem-vindo ao MindWeave AI Backend!"}
 

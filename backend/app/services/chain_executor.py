@@ -51,12 +51,18 @@ def _has_credential(provider_id: str) -> bool:
 
 def build_chain(preferred: str | None = None) -> list[str]:
     """Cadeia efetiva: ordem configurada pelo usuário (tabela provider_chain);
-    sem configuração -> DEFAULT_CHAIN. Filtra sem credencial; preferred à frente;
+    sem configuração -> DEFAULT_CHAIN. Filtra sem credencial; preferred à
+    frente SOMENTE se estiver habilitado na cadeia (toggle off vence);
     locais por último (fallback soberano)."""
-    configured = [c["provider"] for c in chain_config_service.get_chain_config() if c["enabled"]]
-    base_order = configured or list(DEFAULT_CHAIN)
+    configured_enabled = {
+        c["provider"] for c in chain_config_service.get_chain_config() if c["enabled"]
+    }
+    base_order = (
+        [c["provider"] for c in chain_config_service.get_chain_config() if c["enabled"]]
+        or list(DEFAULT_CHAIN)
+    )
     usable = [p for p in base_order if p in PROVIDERS and _has_credential(p)]
-    if preferred and preferred in PROVIDERS:
+    if preferred and preferred in PROVIDERS and preferred in configured_enabled:
         if preferred in usable:
             usable.remove(preferred)
         usable.insert(0, preferred)

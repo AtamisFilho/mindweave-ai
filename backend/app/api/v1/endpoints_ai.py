@@ -23,7 +23,7 @@ from app.models.ai_models import (
     OllamaConfig,
 )
 from app.providers import get_provider
-from app.services import ai_service, chain_executor, keys_service
+from app.services import chain_executor, keys_service
 from app.services.ai_service import (
     build_research_prompt,
     build_suggest_prompt,
@@ -36,9 +36,10 @@ logger = logging.getLogger("app.api")
 
 router = APIRouter()
 
-# --- Configuração de IA (em memória) ---
-# Chaves de API NÃO são armazenadas aqui; a fonte canônica é a tabela
-# api_keys (criptografada) e o chain executor decide o provedor.
+# --- Configuração legada de IA (em memória) ---
+# Restou apenas o selectedProvider/ollamaConfig da v0.3 (usado como default
+# do model_name do Ollama). Chaves NÃO passam por aqui: fonte única é a
+# tabela api_keys (criptografada) e o chain executor decide o provedor.
 
 _current_ai_settings = AIProviderConfig(
     selectedProvider='ollama',
@@ -75,12 +76,8 @@ def _kind_to_http_error(provider_label: str, exc: Exception) -> HTTPException:
 
 
 def _api_key_for(provider_id: str) -> str | None:
-    """Chave do provedor: tabela criptografada primeiro; legados em memória."""
-    if provider_id == 'openai':
-        return keys_service.get_key('openai') or ai_service.get_openai_key()
-    if provider_id == 'google':
-        return keys_service.get_key('google') or ai_service.get_google_key()
-    return None
+    """Chave do provedor — fonte única: tabela api_keys (criptografada)."""
+    return keys_service.get_key(provider_id)
 
 
 async def _complete_via(provider_id: str, prompt: str, model: str | None, request) -> str:
@@ -204,8 +201,8 @@ async def get_ai_config():
     return AIProviderConfigResponse(
         selectedProvider=_current_ai_settings.selectedProvider,
         ollamaConfig=_current_ai_settings.ollamaConfig,
-        isOpenAiKeySet=ai_service.is_openai_key_set(),
-        isGoogleKeySet=ai_service.is_google_key_set()
+        isOpenAiKeySet=keys_service.get_key("openai") is not None,
+        isGoogleKeySet=keys_service.get_key("google") is not None
     )
 
 @router.put("/config", response_model=AIProviderConfigResponse)
@@ -221,13 +218,11 @@ async def update_ai_config(config_update: AIProviderConfig = Body(...)):
     _current_ai_settings.ollamaConfig = config_update.ollamaConfig
 
     if config_update.openaiApiKey:
-        ai_service.set_openai_api_key(config_update.openaiApiKey)
-        keys_service.set_key("openai", config_update.openaiApiKey)  # espelho criptografado (v0.4 B0)
+        keys_service.set_key("openai", config_update.openaiApiKey)
         logger.info("Chave OpenAI atualizada via endpoint de configuração.")
 
     if config_update.googleApiKey:
-        ai_service.set_google_api_key(config_update.googleApiKey)
-        keys_service.set_key("google", config_update.googleApiKey)  # espelho criptografado (v0.4 B0)
+        keys_service.set_key("google", config_update.googleApiKey)
         logger.info("Chave Google atualizada via endpoint de configuração.")
 
     logger.info(
@@ -239,6 +234,6 @@ async def update_ai_config(config_update: AIProviderConfig = Body(...)):
     return AIProviderConfigResponse(
         selectedProvider=_current_ai_settings.selectedProvider,
         ollamaConfig=_current_ai_settings.ollamaConfig,
-        isOpenAiKeySet=ai_service.is_openai_key_set(),
-        isGoogleKeySet=ai_service.is_google_key_set()
+        isOpenAiKeySet=keys_service.get_key("openai") is not None,
+        isGoogleKeySet=keys_service.get_key("google") is not None
     )

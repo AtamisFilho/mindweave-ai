@@ -1,141 +1,116 @@
 # MindWeave AI
 
-MindWeave AI é uma aplicação de mapa mental inteligente que se integra com modelos de linguagem grandes (LLMs) para ajudar os usuários a realizar pesquisas profundas, obter sugestões de nós e expandir suas ideias de forma contextual.
+Mapa mental inteligente com **IA sempre-disponível**: organize ideias num canvas de grafo (DAG com cross-links), pesquise tópicos com LLMs considerando o contexto hierárquico, gere sub-nós automaticamente e nunca perca trabalho — autosave contínuo com persistência em SQLite e resiliência offline.
 
-## Funcionalidades Principais
+## Funcionalidades
 
-*   **Criação de Mapas Mentais:**
-    *   Adicione, edite e conecte nós para visualizar suas ideias.
-    *   Interface intuitiva de arrastar e soltar.
-*   **Integração com IA:**
-    *   **Pesquisa Profunda:** Para qualquer nó, utilize a IA para obter um resumo de pesquisa detalhado sobre o tópico, mantendo o contexto dos nós pais.
-    *   **Sugerir Novos Nós:** Deixe a IA sugerir sub-nós relevantes com base no nó atual e seu contexto hierárquico.
-*   **Múltiplos Provedores de IA:**
-    *   Suporte para **Ollama** (execução local de modelos como Llama 3, Mistral, etc.).
-    *   Suporte para **OpenAI API** (requer chave de API).
-    *   Suporte para **Google Gemini API** (requer chave de API).
-    *   Configure facilmente seu provedor preferido.
-*   **Interface Moderna:**
-    *   Modo Claro e Escuro.
-    *   Design limpo e responsivo (básico).
+### 🧠 IA sempre-disponível (Provider Chain)
+- **8 provedores** integrados: Groq, Google Gemini, OpenRouter, Cerebras, DeepSeek, OpenAI, Ollama (local) e LM Studio (local)
+- **Fallback automático**: o backend tenta a cadeia na ordem que você definir; quota/rate-limit → próximo provedor, com cooldown inteligente (respeita `Retry-After`)
+- **Chaves criptografadas em repouso** (Fernet no SQLite) — configuráveis pela UI, com "Testar conexão" por provedor
+- **Classificação fina de erros**: quota esgotada ≠ rate limit ≠ chave inválida ≠ contexto estourado — cada caso com ação clara na UI
+- **Pesquisa Profunda** com contexto hierárquico (o grafo é um DAG: cross-links contam) e **Sugestão de Nós** inseridos automaticamente
 
-## Tecnologias Utilizadas
+### 🗺️ Editor de mapas
+- Canvas React Flow: criar/editar/conectar nós (drag entre handles), cross-links com múltiplos pais, rejeição de ciclos
+- **Layout Engine**: 4 direções + **balanceado Left-Right/Up-Down** (estilo XMind/niMind) via dagre, determinístico, com animação, presets visuais (curva/reta/cantos × árvore/lista) e modo Auto
+- Undo escopado de layout e exclusões (toast de 5s)
 
-*   **Frontend:**
-    *   React 19 (com Vite)
-    *   @xyflow/react v12 (React Flow, para renderização do mapa mental)
-    *   Zustand (para gerenciamento de estado)
-    *   Tailwind CSS v4 (para estilização)
-    *   Axios (para chamadas HTTP)
-*   **Backend:**
-    *   Python
-    *   FastAPI (framework web de alta performance)
-    *   Pydantic (para validação de dados)
-    *   HTTPX (para chamadas HTTP assíncronas para os modelos de IA)
-*   **IA:**
-    *   Ollama API
-    *   OpenAI API
-    *   Google Gemini API
+### 💾 Persistência
+- **Autosave silencioso** (debounce 1s) + `Ctrl/Cmd+S` imediato
+- **Múltiplos mapas** com Fricção Zero: abre no último editado, sem tela de lista
+- **Busca global de nós** (FTS5, caixa/acento-insensível) no menu de Mapas
+- **Resiliência offline**: falha de rede → snapshot em localStorage + sincronização automática com detecção de conflito entre abas (409 versionado)
 
-## Configuração e Execução
+## Stack
+
+| Camada | Tecnologias |
+|---|---|
+| Frontend | React 19 · Vite · @xyflow/react v12 · Zustand · Tailwind v4 · sonner · react-markdown |
+| Backend | Python · FastAPI · SQLAlchemy 2 · SQLite (WAL + FTS5) · httpx · cryptography (Fernet) |
+| IA | Adaptadores próprios (OpenAI-compatible p/ 6 provedores + Gemini/Ollama nativos) |
+
+## Configuração e execução
 
 ### Pré-requisitos
+- Node.js 20+, Python 3.10+
+- Ollama (opcional, fallback local): `ollama pull llama3`
 
-*   Node.js (v20 ou superior recomendado) e npm
-*   Python (v3.10 ou superior recomendado) e pip
-*   Ollama instalado e em execução (se for usar Ollama).
-    *   Baixe modelos para o Ollama, por exemplo: `ollama pull llama3`
-*   (Opcional) Chaves de API para OpenAI e/ou Google Gemini.
-
-### 1. Backend
+### Backend
 
 ```bash
-# Clone o repositório (se ainda não o fez)
-# git clone <url-do-repositorio>
-# cd <nome-do-repositorio>
-
 cd backend
-
-# Crie um ambiente virtual (recomendado)
 python -m venv venv
-source venv/bin/activate  # No Windows: venv\Scripts\activate
-
-# Instale as dependências
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# (Opcional) Crie um arquivo .env na pasta 'backend' para configurar as chaves de API e Ollama:
-# Exemplo de backend/.env:
-# OLLAMA_BASE_URL=http://localhost:11434
-# DEFAULT_OLLAMA_MODEL=llama3
-# OPENAI_API_KEY="sk-sua-chave-openai"
-# GOOGLE_API_KEY="sua-chave-google"
-
-# Execute o servidor backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
-O backend estará rodando em `http://localhost:8000`. Você pode acessar a documentação da API em `http://localhost:8000/docs`.
 
-### 2. Frontend
+API docs: `http://localhost:8000/docs`
+
+### Frontend
 
 ```bash
-# Em um novo terminal, navegue até a pasta frontend
 cd frontend
-
-# Instale as dependências
 npm install
-
-# (Opcional) Crie um arquivo .env na pasta 'frontend' se a URL do backend for diferente da padrão:
-# Exemplo de frontend/.env:
-# VITE_API_BASE_URL=http://localhost:8000/api/v1
-
-# Execute o servidor de desenvolvimento do frontend
-npm run dev
+npm run dev        # http://localhost:5173
 ```
-O frontend estará rodando em um endereço como `http://localhost:5173` (o Vite informará a porta exata).
 
-### 3. Configurando Provedores de IA no Aplicativo
+### Chaves de API
 
-1.  Abra o aplicativo no seu navegador.
-2.  No painel lateral, clique em "IA Config".
-3.  **Para Ollama:**
-    *   Certifique-se que o Ollama está rodando localmente.
-    *   A URL base padrão é `http://localhost:11434`. Ajuste se necessário.
-    *   Especifique o modelo Ollama que você baixou (ex: `llama3`, `mistral`).
-4.  **Para OpenAI / Google:**
-    *   Selecione o provedor desejado.
-    *   Insira sua chave de API no campo correspondente.
-    *   Clique em "Salvar". A chave será enviada ao backend (armazenada em memória para a sessão atual do backend).
+Configure pela **UI**: aba `IA Config` → *Cadeia de Provedores* → botão "Testar" valida cada provedor. As chaves são criptografadas (Fernet) na tabela `api_keys` do SQLite — nunca em texto plano, nunca em logs.
 
-## Como Usar
+O `.env` do backend é **só para segredos de infraestrutura** (veja `backend/.env.example`):
 
-1.  **Adicionar Nós:** Clique em "Adicionar Nó Raiz" ou, se um nó estiver selecionado, use o botão "Adicionar Filho" no próprio nó.
-2.  **Editar Texto:** Dê um duplo clique no texto de um nó para editá-lo. Pressione Enter ou clique fora para salvar.
-3.  **Conectar Nós:** Clique e arraste de um pequeno círculo (handle) na borda de um nó para o handle de outro nó.
-4.  **Ações de IA:**
-    *   Selecione um nó. Os botões de ação de IA aparecerão nele.
-    *   **Pesquisa IA:** Gera um resumo sobre o tópico do nó, considerando o contexto dos nós pais. O resultado aparece em um modal.
-    *   **Sugerir Nós IA:** Adiciona novos nós filhos ao nó selecionado, com sugestões da IA.
-5.  **Navegação:** Use o mouse para arrastar o canvas (pan) e a roda do mouse para zoom. Controles de zoom também estão disponíveis.
-6.  **Deletar Nós:** Selecione um nó e pressione a tecla `Delete` ou `Backspace`.
+```env
+ENCRYPTION_SECRET=minha-frase-secreta   # master key da criptografia (default: auto-gerada em backend/data/)
+ALLOWED_ORIGINS=http://localhost:5173   # CORS
+LOG_PROMPTS=false                       # jamais habilitar em produção
+SECURITY_HSTS=false                     # só com HTTPS
+```
 
-## Estrutura do Projeto
+Chaves antigas em `OPENAI_API_KEY`/`GOOGLE_API_KEY` (.env) são **migradas automaticamente** para o banco criptografado no primeiro boot.
+
+## Estrutura do projeto
 
 ```
 /
-├── backend/        # Código do backend FastAPI (Python)
+├── backend/
 │   ├── app/
-│   ├── .env        # (Opcional) Configurações do backend
-│   └── requirements.txt
-├── frontend/       # Código do frontend React (Vite)
+│   │   ├── api/v1/          # endpoints (ai, maps, keys, chain, test)
+│   │   ├── core/            # config (pydantic-settings), erros, crypto (Fernet)
+│   │   ├── providers/       # adaptadores: base + openai_compatible + gemini/ollama nativos
+│   │   ├── services/        # ai_service (prompts), chain_executor, chain_config,
+│   │   │                    #   keys_service, maps_service
+│   │   ├── db.py            # engine SQLite (WAL, FKs) + FTS5
+│   │   └── models_db.py     # maps, api_keys, provider_chain
+│   └── tests/               # pytest + respx (upstreams mockados) + mock_upstream.py
+├── frontend/
 │   ├── src/
-│   ├── .env        # (Opcional) Configurações do frontend
-│   └── package.json
-└── README.md       # Este arquivo
+│   │   ├── components/      # MindMap, Maps (menu/autosave), Research, AISettings (cadeia)
+│   │   ├── layout/          # engine.js (dagre) + balance.js (LR/UD particionado)
+│   │   ├── store/           # Zustand (grafo, persistência, IA, UI)
+│   │   └── services/        # api.js (axios), notify.js (toasts por error_code)
+│   └── e2e/                 # Playwright (app, persistência, layout, provider_chain, chain_ui)
+├── docs/design/             # design docs dos épicos
+└── .github/workflows/       # CI: ruff+pytest · eslint+vitest+build · Playwright
 ```
 
-## Próximos Passos e Melhorias Potenciais
+## Desenvolvimento
 
-Veja o [ROADMAP.md](ROADMAP.md) para o plano de evolução detalhado (persistência, IA avançada e escala) e o [CHANGELOG.md](CHANGELOG.md) para o histórico de versões.
+```bash
+# backend: testes e lint
+cd backend && pytest -q && ruff check .
+
+# frontend: testes, lint, build, e2e
+cd frontend && npm run test && npm run lint && npm run build && npm run e2e
+```
+
+Os E2Es de persistência/cadeia sobem backend e upstreams mockados automaticamente (Playwright `webServer`).
+
+## Roadmap
+
+Veja [ROADMAP.md](ROADMAP.md) (próximo: **v0.4.5 — Experiência de IA**: streaming, chat com o mapa, geração de mapa inteiro) e o histórico em [CHANGELOG.md](CHANGELOG.md).
 
 ## Licença
 

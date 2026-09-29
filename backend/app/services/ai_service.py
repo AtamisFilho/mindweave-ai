@@ -1,46 +1,11 @@
-"""Serviço de IA (v0.4 slim): construção de prompts e gerência de chaves.
+"""Montagem de prompts e parsing das respostas de IA (v0.4).
 
-As CHAMADAS aos provedores migraram para os adapters (app/providers/*)
-orquestrados pelo chain_executor. Este módulo mantém o que é compartilhado:
-contexto ancestral, prompts e o gerenciamento em memória das chaves
-(compatibilidade v0.3 — a fonte canônica é a tabela api_keys, v0.4 B0).
+A gerência de chaves vive em keys_service (tabela api_keys criptografada);
+as chamadas aos provedores, em app/providers/* orquestrados pelo
+chain_executor. Este módulo é puro: nada de estado, rede ou segredos.
 """
-import os
 
 from app.models.ai_models import NodeContext
-
-# --- Gerenciamento de API Keys (Simples - NÃO PARA PRODUÇÃO REAL) ---
-# Fonte canônica na v0.4: tabela api_keys (criptografada). Estes globais
-# permanecem como fallback de compatibilidade da v0.3.
-_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-_GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
-
-def set_openai_api_key(key: str):
-    global _OPENAI_API_KEY
-    _OPENAI_API_KEY = key
-
-
-def set_google_api_key(key: str):
-    global _GOOGLE_API_KEY
-    _GOOGLE_API_KEY = key
-
-
-def get_openai_key() -> str | None:
-    return _OPENAI_API_KEY
-
-
-def get_google_key() -> str | None:
-    return _GOOGLE_API_KEY
-
-
-def is_openai_key_set() -> bool:
-    return bool(_OPENAI_API_KEY)
-
-
-def is_google_key_set() -> bool:
-    return bool(_GOOGLE_API_KEY)
-# --- Fim do Gerenciamento de API Keys ---
 
 
 def get_ancestor_context_string(ancestorContext: list[NodeContext]) -> str:

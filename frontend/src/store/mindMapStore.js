@@ -276,9 +276,8 @@ const useMindMapStore = create((set, get) => ({
       nodeId: node.id,
       nodeContent: node.data.label,
       ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
-      // v0.4: SEM 'provider' fixo — a cadeia decide, com fallback automático
-      preferred_provider: get().aiConfig.selectedProvider || undefined,
-      model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
+      // v0.4 B3: a ORDEM DA CADEIA decide (sem preferred, sem provider fixo)
+      model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
     try {
@@ -297,7 +296,7 @@ const useMindMapStore = create((set, get) => ({
         activePanel: 'research',
         aiLoading: false,
         lastProviderUsed: result.provider_used ?? null,
-        fallbackActiveUntil: (result.fallback_trail?.length ?? 0) > 0 ? Date.now() + 5000 : 0,
+        fallbackActiveUntil: (result.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
       }));
       toast.success('Pesquisa concluída', {
         description: `Respondido por ${result.provider_used ?? 'IA'}.`,
@@ -324,9 +323,8 @@ const useMindMapStore = create((set, get) => ({
       nodeId: parentNode.id,
       nodeContent: parentNode.data.label,
       ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
-      // v0.4: SEM 'provider' fixo — a cadeia decide, com fallback automático
-      preferred_provider: get().aiConfig.selectedProvider || undefined,
-      model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
+      // v0.4 B3: a ORDEM DA CADEIA decide (sem preferred, sem provider fixo)
+      model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
     try {
