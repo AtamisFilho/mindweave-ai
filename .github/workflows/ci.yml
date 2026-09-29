@@ -76,10 +76,13 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Testes E2E (persistência com backend real + app mockado)
         run: npx playwright test
-      - name: Artefatos em falha (trace + screenshots)
+      - name: Artefatos em falha (relatório HTML + traces)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: frontend/playwright-report/
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
           retention-days: 7
+          if-no-files-found: warn

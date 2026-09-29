@@ -8,7 +8,7 @@ export default defineConfig({
   timeout: 45000,
   fullyParallel: false, // testes de persistência compartilham o /last do backend real
   workers: 1, // e sem paralelismo ENTRE arquivos: o beforeEach de um limpa o mapa do outro
-  reporter: [['list']],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
@@ -28,6 +28,22 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 60000,
       env: process.env.CI ? { DATABASE_URL: 'sqlite:///./e2e_mindweave.db' } : {},
+    },
+    {
+      // Mock upstream LM Studio (OpenAI-compatible) — controlável por /control?mode=
+      command: 'python tests/mock_upstream.py 1234 ok-openai',
+      cwd: '../backend',
+      url: 'http://127.0.0.1:1234/',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
+    },
+    {
+      // Mock upstream Ollama — controlável por /control?mode=
+      command: 'python tests/mock_upstream.py 11434 ok-ollama',
+      cwd: '../backend',
+      url: 'http://127.0.0.1:11434/',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
     },
   ],
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
