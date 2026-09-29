@@ -158,9 +158,15 @@ async def test_ollama_404_modelo_inexistente():
     assert exc.value.kind.value == "MODEL_NOT_FOUND"
 
 
-# --- streaming (Diretriz 1: interface pronta, implementação na v0.4.5) ---
+# --- streaming (v0.4.5): interface pronta desde a v0.4; adapter sem
+# supports_stream mantém o stub NotImplementedError ---
 
-async def test_complete_stream_ainda_nao_implementado():
+async def test_adapter_sem_stream_levanta_not_implemented():
+    assert gemini.supports_stream is False
     with pytest.raises(NotImplementedError):
-        async for _ in groq.complete_stream("prompt", "m", "chave"):
+        async for _ in gemini.complete_stream("prompt", "m", "chave"):
             pass
+
+
+async def test_groq_tem_suporte_a_stream():
+    assert groq.supports_stream is True

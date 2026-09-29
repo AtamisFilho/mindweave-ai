@@ -88,6 +88,7 @@ const ResearchPanel = () => {
     researchPanelNodeId,
     researchPanelPinned,
     nodes,
+    streamState,
     toggleResearchPanelPin,
     setResearchPanelNode,
   } = useMindMapStore(useShallow((state) => ({
@@ -95,6 +96,7 @@ const ResearchPanel = () => {
     researchPanelNodeId: state.researchPanelNodeId,
     researchPanelPinned: state.researchPanelPinned,
     nodes: state.nodes,
+    streamState: state.streamState,
     toggleResearchPanelPin: state.toggleResearchPanelPin,
     setResearchPanelNode: state.setResearchPanelNode,
   })));
@@ -115,8 +117,37 @@ const ResearchPanel = () => {
   const panelNodeLabel = researchPanelNodeId ? labelFor(researchPanelNodeId) : null;
   const nodeMissing = researchPanelNodeId && !nodes.some((n) => n.id === researchPanelNodeId);
 
+  // Linha de status viva da cadeia (v0.4.5): trying → failed/skipped → committed
+  const phaseLabel = streamState?.phase === 'committed'
+    ? `✍️ Gerando via ${streamState.providerLabel}…`
+    : streamState?.providerLabel
+      ? `⛓ Tentando ${streamState.providerLabel}…`
+      : '⛓ Iniciando cadeia…';
+
   return (
     <div>
+      {streamState && (
+        <div className="mb-3 rounded-md border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 p-2.5">
+          <p className="text-xs font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" aria-hidden="true" />
+            {phaseLabel}
+          </p>
+          {streamState.trail.length > 0 && (
+            <ul className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 space-y-0.5">
+              {streamState.trail.map((t, i) => (
+                <li key={i}>
+                  {t.skipped ? '⏭' : '✗'} {t.provider}: {t.skipped ? 'cooldown' : (t.kind === 'RATE_LIMIT' ? 'rate limit' : t.kind === 'QUOTA_EXHAUSTED' ? 'quota esgotada' : t.kind === 'NETWORK_ERROR' ? 'indisponível' : (t.message || 'falhou'))}
+                </li>
+              ))}
+            </ul>
+          )}
+          {streamState.text && (
+            <pre className="text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300 mt-1.5 max-h-40 overflow-y-auto">
+              {streamState.text}
+            </pre>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Pesquisas</h3>
         <button

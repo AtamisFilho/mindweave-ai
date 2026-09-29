@@ -23,6 +23,7 @@ class ErrorCode(str, Enum):
     KEY_NOT_CONFIGURED = "KEY_NOT_CONFIGURED"            # 400 — chave ausente no servidor
     UNKNOWN_PROVIDER = "UNKNOWN_PROVIDER"                # 400 — provedor inexistente
     ALL_PROVIDERS_FAILED = "ALL_PROVIDERS_FAILED"        # 503 — toda a cadeia falhou
+    PROVIDER_STREAM_INTERRUPTED = "PROVIDER_STREAM_INTERRUPTED"  # stream morreu após o commit
 
 
 class ErrorKind(str, Enum):

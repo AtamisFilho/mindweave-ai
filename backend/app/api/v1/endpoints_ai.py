@@ -143,6 +143,51 @@ async def deep_research(request: AIResearchRequest = Body(...)):
     )
 
 
+
+
+@router.post("/deep-research/stream")
+async def deep_research_stream(request: AIResearchRequest = Body(...)):
+    """Versão SSE da pesquisa: eventos chain/token/done/error (v0.4.5).
+
+    Heartbeat ': ping' a cada 15s durante o thinking time. Transporte é
+    fetch+ReadableStream no cliente (EventSource não aceita POST com corpo).
+    """
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    ancestor_str = get_ancestor_context_string(request.ancestorContext)
+    prompt = build_research_prompt(request.nodeContent, ancestor_str)
+
+    async def event_stream():
+        gen = chain_executor.execute_chain_stream(
+            prompt,
+            model=request.model_name,
+            preferred=request.preferred_provider,
+        )
+        newline = chr(10)
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(anext(gen), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f": ping{newline}{newline}"  # mantém proxies vivos no thinking time
+                    continue
+                except StopAsyncIteration:
+                    break
+                yield f"data: {json.dumps(event, ensure_ascii=False)}{newline}{newline}"
+        finally:
+            # desconexão do cliente propaga o fechamento até o httpx do adapter
+            await gen.aclose()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/suggest-nodes", response_model=AISuggestNodesResponse)
 async def suggest_nodes(request: AISuggestNodesRequest = Body(...)):
     ancestor_str = get_ancestor_context_string(request.ancestorContext)

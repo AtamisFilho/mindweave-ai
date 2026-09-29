@@ -6,7 +6,6 @@ import {
 } from '@xyflow/react';
 import {
   getAIConfig, updateAIConfig as apiUpdateAIConfig,
-  performDeepResearch as apiPerformDeepResearch,
   suggestNewNodes as apiSuggestNewNodes,
   extractApiError,
   createMap as apiCreateMap,
@@ -15,6 +14,7 @@ import {
   saveMapApi,
   deleteMapApi,
   getChain,
+  streamDeepResearch,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
@@ -115,6 +115,7 @@ const useMindMapStore = create((set, get) => ({
   chainConfig: [],          // cadeia de provedores (v0.4 B3)
   lastProviderUsed: null,   // quem respondeu a última pesquisa (badge do header)
   fallbackActiveUntil: 0,   // timestamp até quando mostrar "(fallback)" no badge
+  streamState: null,        // linha de status viva do streaming (v0.4.5)
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -272,10 +273,14 @@ const useMindMapStore = create((set, get) => ({
   
   // --- AI Feature actions ---
   performDeepResearch: async (nodeId) => {
-    set({ aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null });
+    set({
+      aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null,
+      // linha de status viva da cadeia (v0.4.5)
+      streamState: { phase: 'trying', providerLabel: null, trail: [], text: '' },
+    });
     const node = get().nodes.find(n => n.id === nodeId);
     if (!node) {
-      set({ aiError: 'Nó não encontrado.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false });
+      set({ aiError: 'Nó não encontrado.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false, streamState: null });
       return;
     }
 
@@ -287,32 +292,83 @@ const useMindMapStore = create((set, get) => ({
       model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
+    // Buffer de renderização: deltas chegam centenas/s — flush a cada 50ms
+    let pendingText = '';
+    let flushTimer = null;
+    const flush = () => {
+      flushTimer = null;
+      set((s) => (s.streamState ? { streamState: { ...s.streamState, text: s.streamState.text + pendingText } } : {}));
+      pendingText = '';
+    };
+
     try {
-      const result = await apiPerformDeepResearch(researchData); // from api.js
+      let donePayload = null;
+      await streamDeepResearch(researchData, {
+        onEvent: (ev) => {
+          if (ev.event === 'chain') {
+            set((s) => {
+              if (!s.streamState) return {};
+              if (ev.status === 'failed' || ev.status === 'skipped') {
+                return { streamState: { ...s.streamState, trail: [...s.streamState.trail, {
+                  provider: ev.provider_label ?? ev.provider,
+                  kind: ev.kind, message: ev.message, skipped: ev.status === 'skipped',
+                }] } };
+              }
+              return { streamState: { ...s.streamState,
+                phase: ev.status === 'committed' ? 'committed' : 'trying',
+                providerLabel: ev.provider_label ?? ev.provider } };
+            });
+          } else if (ev.event === 'token') {
+            pendingText += ev.delta;
+            if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (ev.event === 'done') {
+            donePayload = { provider_used: ev.provider_used, fallback_trail: ev.fallback_trail ?? [] };
+          } else if (ev.event === 'error') {
+            throw { response: { status: 503, data: { detail: {
+              error_code: ev.error_code, message: ev.message,
+              provider: 'chain', fallback_trail: ev.fallback_trail ?? [],
+            } } } };
+          }
+        },
+      });
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flush(); // done pode chegar antes do timer de 50ms — descarrega o texto pendente
+
+      const summary = get().streamState?.text ?? '';
       const entry = {
-        id: `${Date.now()}-${result.nodeId}`,
-        nodeId: result.nodeId,
-        summary: result.researchSummary,
+        id: `${Date.now()}-${researchData.nodeId}`,
+        nodeId: researchData.nodeId,
+        summary,
         createdAt: Date.now(),
       };
       set((s) => ({
-        researchResult: { nodeId: result.nodeId, summary: result.researchSummary },
+        researchResult: { nodeId: researchData.nodeId, summary },
         researchHistory: [entry, ...s.researchHistory],
-        // Painel segue o "último nó pesquisado", exceto quando fixado (pin)
-        researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : result.nodeId,
+        researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : researchData.nodeId,
         activePanel: 'research',
         aiLoading: false,
-        lastProviderUsed: result.provider_used ?? null,
-        fallbackActiveUntil: (result.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
+        lastProviderUsed: donePayload.provider_used ?? null,
+        fallbackActiveUntil: (donePayload.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
+        streamState: null,
       }));
       toast.success('Pesquisa concluída', {
-        description: `Respondido por ${result.provider_used ?? 'IA'}.`,
+        description: `Respondido por ${donePayload.provider_used ?? 'IA'}.`,
       });
     } catch (error) {
-      const { code, message, provider } = extractApiError(error);
-      set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      if (flushTimer) clearTimeout(flushTimer);
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false, streamState: null });
+      if (code === 'PROVIDER_STREAM_INTERRUPTED') {
+        // commit point já passado: sem fallback — o cliente decide o retry
+        toast.error('Conexão interrompida', {
+          description: message,
+          duration: 12000,
+          action: { label: 'Tentar novamente', onClick: () => get().performDeepResearch(nodeId) },
+        });
+        return;
+      }
       notifyAiError(
-        { code, message, provider, trail: extractApiError(error).trail },
+        { code, message, provider, trail },
         { onOpenConfig: () => get().openConfigForKey(provider) },
       );
     }
