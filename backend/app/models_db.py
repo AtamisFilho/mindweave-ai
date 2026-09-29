@@ -6,7 +6,7 @@ O texto dos nós é indexado em `node_index` (FTS5), tabela derivada.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -44,3 +44,18 @@ class APIKeyRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class ProviderChainRow(Base):
+    """Cadeia de provedores configurada pelo usuário (ordem = prioridade).
+
+    Locais (ollama/lmstudio) devem ficar por último na UI — fallback soberano.
+    model (opcional) sobrescreve o default do provedor na cadeia.
+    """
+
+    __tablename__ = "provider_chain"
+
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)

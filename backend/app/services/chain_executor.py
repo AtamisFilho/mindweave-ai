@@ -12,7 +12,7 @@ import time
 
 from app.core.errors import AIProviderError, ErrorCode, ErrorKind
 from app.providers import PROVIDERS
-from app.services import keys_service
+from app.services import chain_config_service, keys_service
 
 # Default da ordem (o usuário reordena na UI a partir do B3);
 # locais por último = fallback soberano.
@@ -31,6 +31,12 @@ def provider_in_cooldown(provider_id: str) -> bool:
     return _COOLDOWNS.get(provider_id, 0) > _now()
 
 
+def cooldown_until(provider_id: str) -> int | None:
+    """Epoch até quando o provedor está em cooldown (None = disponível)."""
+    until = _COOLDOWNS.get(provider_id, 0)
+    return int(until) if until > _now() else None
+
+
 def reset_cooldowns() -> None:
     """Limpa cooldowns (uso em testes e em 'Sincronizar agora')."""
     _COOLDOWNS.clear()
@@ -44,9 +50,12 @@ def _has_credential(provider_id: str) -> bool:
 
 
 def build_chain(preferred: str | None = None) -> list[str]:
-    """Cadeia efetiva: provedores com credencial/local, na ordem DEFAULT_CHAIN;
-    o preferred (quando configurado) vai para a frente; locais por último."""
-    usable = [p for p in DEFAULT_CHAIN if p in PROVIDERS and _has_credential(p)]
+    """Cadeia efetiva: ordem configurada pelo usuário (tabela provider_chain);
+    sem configuração -> DEFAULT_CHAIN. Filtra sem credencial; preferred à frente;
+    locais por último (fallback soberano)."""
+    configured = [c["provider"] for c in chain_config_service.get_chain_config() if c["enabled"]]
+    base_order = configured or list(DEFAULT_CHAIN)
+    usable = [p for p in base_order if p in PROVIDERS and _has_credential(p)]
     if preferred and preferred in PROVIDERS:
         if preferred in usable:
             usable.remove(preferred)

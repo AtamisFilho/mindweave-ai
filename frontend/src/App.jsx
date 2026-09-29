@@ -7,10 +7,12 @@ import ErrorBoundary from './components/ErrorBoundary';
 import MapTitle from './components/Maps/MapTitle';
 import MapsMenu from './components/Maps/MapsMenu';
 import SaveIndicator from './components/Maps/SaveIndicator';
+import AIStatusBadge from './components/AISettings/AIStatusBadge';
 
 // Lazy load components for better initial load time
 const MindMapCanvas = React.lazy(() => import('./components/MindMap/MindMapCanvas'));
 const AISettingsPanel = React.lazy(() => import('./components/AISettings/AISettingsPanel'));
+const ProviderChainConfig = React.lazy(() => import('./components/AISettings/ProviderChainConfig'));
 const ResearchPanel = React.lazy(() => import('./components/Research/ResearchPanel'));
 
 function App() {
@@ -94,6 +96,7 @@ function App() {
           <MapTitle />
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <AIStatusBadge />
           <SaveIndicator />
           <MapsMenu />
           <Button onClick={toggleDarkMode} variant="ghost" className="text-sm px-2! py-1!">
@@ -144,7 +147,12 @@ function App() {
               </div>
             )}
             {activePanel === 'research' && <ResearchPanel />}
-            {activePanel === 'config' && <AISettingsPanel />}
+            {activePanel === 'config' && (
+              <div className="space-y-4">
+                <ProviderChainConfig />
+                <AISettingsPanel />
+              </div>
+            )}
           </Suspense>
         </aside>
 

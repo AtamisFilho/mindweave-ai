@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import endpoints_ai, endpoints_keys, endpoints_maps
+from app.api.v1 import endpoints_ai, endpoints_chain, endpoints_keys, endpoints_maps, endpoints_test
 from app.core.config import settings
 from app.core.errors import AIProviderError
 from app.db import init_db
@@ -51,6 +51,8 @@ async def security_headers_middleware(request: Request, call_next):
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
 app.include_router(endpoints_maps.router, prefix="/api/v1/maps", tags=["Maps"])
 app.include_router(endpoints_keys.router, prefix="/api/v1/ai/keys", tags=["AI Keys"])
+app.include_router(endpoints_chain.router, prefix="/api/v1/ai/chain", tags=["Provider Chain"])
+app.include_router(endpoints_test.router, prefix="/api/v1/ai/keys", tags=["AI Keys"])
 
 
 @app.exception_handler(MapVersionConflict)
