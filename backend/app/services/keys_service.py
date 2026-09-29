@@ -1,8 +1,8 @@
-"""Serviço de chaves de API: criptografia em repouso + precedência.
+"""Serviço de chaves de API: fonte ÚNICA (tabela api_keys, criptografada).
 
-Precedência de chaves (documentada): tabela api_keys VENCE variáveis de
-ambiente (.env). Os globais em memória do ai_service permanecem como
-fallback de compatibilidade até o B1 religar os adapters na tabela.
+As chaves do .env (OPENAI_API_KEY/GOOGLE_API_KEY) são migradas para a
+tabela no primeiro boot (migrate_env_keys, idempotente) — depois, a tabela
+é a única fonte consultada por adapters e endpoints.
 """
 import os
 

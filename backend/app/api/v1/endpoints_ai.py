@@ -1,9 +1,18 @@
+"""Endpoints de IA (v0.4): pesquisa e sugestão via Provider Chain.
+
+Contrato:
+- Sem `provider` no body -> executa na CADEIA (fallback automático entre
+  provedores; `preferred_provider` vai para a frente).
+- Com `provider` (campo legado v0.3) -> tenta APENAS aquele provedor,
+  sem fallback.
+- Respostas carregam `provider_used` e `fallback_trail` para a UI.
+"""
 import logging
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 
 from app.core.config import settings
-from app.core.errors import AIProviderError, ErrorCode
+from app.core.errors import KIND_TO_RESPONSE, AIProviderError, ErrorCode, ErrorKind
 from app.models.ai_models import (
     AIProviderConfig,
     AIProviderConfigResponse,
@@ -13,14 +22,24 @@ from app.models.ai_models import (
     AISuggestNodesResponse,
     OllamaConfig,
 )
-from app.services import ai_service, keys_service
+from app.providers import get_provider
+from app.services import chain_executor, keys_service
+from app.services.ai_service import (
+    build_research_prompt,
+    build_suggest_prompt,
+    get_ancestor_context_string,
+    parse_suggestions,
+)
+from app.services.chain_executor import _kind_of
 
 logger = logging.getLogger("app.api")
 
 router = APIRouter()
 
-# --- Configuração de IA (em memória) ---
-# Chaves de API NÃO são armazenadas aqui; o serviço ai_service gerencia o acesso.
+# --- Configuração legada de IA (em memória) ---
+# Restou apenas o selectedProvider/ollamaConfig da v0.3 (usado como default
+# do model_name do Ollama). Chaves NÃO passam por aqui: fonte única é a
+# tabela api_keys (criptografada) e o chain executor decide o provedor.
 
 _current_ai_settings = AIProviderConfig(
     selectedProvider='ollama',
@@ -40,44 +59,138 @@ def _resolve_ollama_cfg(request) -> OllamaConfig:
     return cfg
 
 
+def _kind_to_http_error(provider_label: str, exc: Exception) -> HTTPException:
+    """Converte ProviderCallError (ou qualquer falha) em HTTPException com
+    payload estruturado {error_code, message, provider, retry_after?}."""
+    kind = _kind_of(exc)
+    code, status = KIND_TO_RESPONSE[kind]
+    retry_after = getattr(exc, "retry_after", None)
+    detail = {
+        "error_code": code.value,
+        "message": f"{provider_label}: {exc}",
+        "provider": provider_label,
+    }
+    if retry_after:
+        detail["retry_after"] = retry_after
+    return HTTPException(status_code=status, detail=detail)
+
+
+def _api_key_for(provider_id: str) -> str | None:
+    """Chave do provedor — fonte única: tabela api_keys (criptografada)."""
+    return keys_service.get_key(provider_id)
+
+
+async def _complete_via(provider_id: str, prompt: str, model: str | None, request) -> str:
+    provider = get_provider(provider_id)
+    model_to_use = model or (
+        _resolve_ollama_cfg(request).model if provider_id == 'ollama' else provider.default_model
+    )
+    api_key = _api_key_for(provider_id)
+    if provider.requires_key and not api_key:
+        # pré-chamada: sem chave nem entra no adapter (contrato v0.3 mantido)
+        raise AIProviderError(
+            ErrorCode.KEY_NOT_CONFIGURED,
+            f"{provider.label}: chave de API não configurada no servidor.",
+            provider.label,
+            status_code=400,
+            kind=ErrorKind.KEY_NOT_CONFIGURED,
+        )
+    try:
+        return await provider.complete(prompt, model_to_use, api_key)
+    except Exception as exc:  # noqa: BLE001 — convertido para erro estruturado
+        raise _kind_to_http_error(provider.label, exc) from exc
+
+
 @router.post("/deep-research", response_model=AIResearchResponse)
 async def deep_research(request: AIResearchRequest = Body(...)):
-    provider_to_use = request.provider or _current_ai_settings.selectedProvider
+    ancestor_str = get_ancestor_context_string(request.ancestorContext)
+    prompt = build_research_prompt(request.nodeContent, ancestor_str)
 
-    if provider_to_use == 'ollama':
-        summary = await ai_service.perform_deep_research_ollama(request, _resolve_ollama_cfg(request))
-    elif provider_to_use == 'openai':
-        summary = await ai_service.perform_deep_research_openai(request, ai_service.get_openai_key())
-    elif provider_to_use == 'google':
-        summary = await ai_service.perform_deep_research_google(request, ai_service.get_google_key())
-    else:
-        raise AIProviderError(
-            ErrorCode.UNKNOWN_PROVIDER,
-            f"Provedor de IA desconhecido: {provider_to_use}",
-            str(provider_to_use), 400,
+    # Campo legado v0.3: UM provedor fixo, sem fallback
+    if request.provider:
+        content = await _complete_via(request.provider, prompt, request.model_name, request)
+        return AIResearchResponse(
+            nodeId=request.nodeId,
+            researchSummary=content,
+            provider_used=request.provider,
+            fallback_trail=[],
         )
 
-    return AIResearchResponse(nodeId=request.nodeId, researchSummary=summary)
+    # v0.4: cadeia com fallback automático
+    try:
+        result = await chain_executor.execute_chain(
+            prompt,
+            model=request.model_name,
+            preferred=request.preferred_provider,
+        )
+    except AIProviderError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "error_code": exc.code.value,
+                "message": exc.message,
+                "provider": exc.provider,
+                "fallback_trail": exc.trail,
+                **({"retry_after": exc.retry_after} if exc.retry_after else {}),
+            },
+        ) from exc
+
+    return AIResearchResponse(
+        nodeId=request.nodeId,
+        researchSummary=result["content"],
+        provider_used=result["provider_label"],
+        fallback_trail=result["trail"],
+    )
 
 
 @router.post("/suggest-nodes", response_model=AISuggestNodesResponse)
 async def suggest_nodes(request: AISuggestNodesRequest = Body(...)):
-    provider_to_use = request.provider or _current_ai_settings.selectedProvider
+    ancestor_str = get_ancestor_context_string(request.ancestorContext)
+    prompt = build_suggest_prompt(request.nodeContent, ancestor_str)
 
-    if provider_to_use == 'ollama':
-        suggestions = await ai_service.suggest_new_nodes_ollama(request, _resolve_ollama_cfg(request))
-    elif provider_to_use == 'openai':
-        suggestions = await ai_service.suggest_new_nodes_openai(request, ai_service.get_openai_key())
-    elif provider_to_use == 'google':
-        suggestions = await ai_service.suggest_new_nodes_google(request, ai_service.get_google_key())
-    else:
-        raise AIProviderError(
-            ErrorCode.UNKNOWN_PROVIDER,
-            f"Provedor de IA desconhecido: {provider_to_use}",
-            str(provider_to_use), 400,
+    # Campo legado v0.3: UM provedor fixo, sem fallback
+    if request.provider:
+        provider = get_provider(request.provider)
+        model = request.model_name or (
+            _resolve_ollama_cfg(request).model if request.provider == 'ollama' else provider.default_model
+        )
+        api_key = _api_key_for(provider_id=request.provider)
+        try:
+            content = await provider.complete(prompt, model, api_key)
+        except Exception as exc:  # noqa: BLE001
+            raise _kind_to_http_error(provider.label, exc) from exc
+        return AISuggestNodesResponse(
+            nodeId=request.nodeId,
+            suggestedNodes=[{"content": s} for s in parse_suggestions(content)],
+            provider_used=request.provider,
+            fallback_trail=[],
         )
 
-    return AISuggestNodesResponse(nodeId=request.nodeId, suggestedNodes=suggestions)
+    # v0.4: cadeia com fallback automático
+    try:
+        result = await chain_executor.execute_chain(
+            prompt,
+            model=request.model_name,
+            preferred=request.preferred_provider,
+        )
+    except AIProviderError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={
+                "error_code": exc.code.value,
+                "message": exc.message,
+                "provider": exc.provider,
+                "fallback_trail": exc.trail,
+                **({"retry_after": exc.retry_after} if exc.retry_after else {}),
+            },
+        ) from exc
+
+    return AISuggestNodesResponse(
+        nodeId=request.nodeId,
+        suggestedNodes=[{"content": s} for s in parse_suggestions(result["content"])],
+        provider_used=result["provider_label"],
+        fallback_trail=result["trail"],
+    )
 
 
 @router.get("/config", response_model=AIProviderConfigResponse)
@@ -88,15 +201,16 @@ async def get_ai_config():
     return AIProviderConfigResponse(
         selectedProvider=_current_ai_settings.selectedProvider,
         ollamaConfig=_current_ai_settings.ollamaConfig,
-        isOpenAiKeySet=ai_service.is_openai_key_set(),
-        isGoogleKeySet=ai_service.is_google_key_set()
+        isOpenAiKeySet=keys_service.get_key("openai") is not None,
+        isGoogleKeySet=keys_service.get_key("google") is not None
     )
 
 @router.put("/config", response_model=AIProviderConfigResponse)
 async def update_ai_config(config_update: AIProviderConfig = Body(...)):
     """
     Atualiza a configuração do provedor de IA.
-    As API keys são passadas para o módulo de serviço (armazenamento em memória).
+    As API keys são passadas para o módulo de serviço (memória v0.3 + espelho
+    criptografado na tabela api_keys, v0.4 B0).
     """
     global _current_ai_settings
 
@@ -104,13 +218,11 @@ async def update_ai_config(config_update: AIProviderConfig = Body(...)):
     _current_ai_settings.ollamaConfig = config_update.ollamaConfig
 
     if config_update.openaiApiKey:
-        ai_service.set_openai_api_key(config_update.openaiApiKey)
-        keys_service.set_key("openai", config_update.openaiApiKey)  # espelho criptografado (v0.4 B0)
+        keys_service.set_key("openai", config_update.openaiApiKey)
         logger.info("Chave OpenAI atualizada via endpoint de configuração.")
 
     if config_update.googleApiKey:
-        ai_service.set_google_api_key(config_update.googleApiKey)
-        keys_service.set_key("google", config_update.googleApiKey)  # espelho criptografado (v0.4 B0)
+        keys_service.set_key("google", config_update.googleApiKey)
         logger.info("Chave Google atualizada via endpoint de configuração.")
 
     logger.info(
@@ -122,6 +234,6 @@ async def update_ai_config(config_update: AIProviderConfig = Body(...)):
     return AIProviderConfigResponse(
         selectedProvider=_current_ai_settings.selectedProvider,
         ollamaConfig=_current_ai_settings.ollamaConfig,
-        isOpenAiKeySet=ai_service.is_openai_key_set(),
-        isGoogleKeySet=ai_service.is_google_key_set()
+        isOpenAiKeySet=keys_service.get_key("openai") is not None,
+        isGoogleKeySet=keys_service.get_key("google") is not None
     )

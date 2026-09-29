@@ -4,11 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import endpoints_ai, endpoints_keys, endpoints_maps
+from app.api.v1 import endpoints_ai, endpoints_chain, endpoints_keys, endpoints_maps, endpoints_test
 from app.core.config import settings
 from app.core.errors import AIProviderError
 from app.db import init_db
-from app.services import ai_service, keys_service
+from app.services import keys_service
 from app.services.maps_service import MapVersionConflict
 
 logging.basicConfig(level=logging.INFO)  # estrutura mínima para desenvolvimento
@@ -51,6 +51,8 @@ async def security_headers_middleware(request: Request, call_next):
 app.include_router(endpoints_ai.router, prefix="/api/v1/ai", tags=["AI Features"])
 app.include_router(endpoints_maps.router, prefix="/api/v1/maps", tags=["Maps"])
 app.include_router(endpoints_keys.router, prefix="/api/v1/ai/keys", tags=["AI Keys"])
+app.include_router(endpoints_chain.router, prefix="/api/v1/ai/chain", tags=["Provider Chain"])
+app.include_router(endpoints_test.router, prefix="/api/v1/ai/keys", tags=["AI Keys"])
 
 
 @app.exception_handler(MapVersionConflict)
@@ -77,16 +79,16 @@ async def ai_provider_error_handler(request: Request, exc: AIProviderError):
         "Falha de IA: error_code=%s provider=%s http=%s",
         exc.code.value, exc.provider, exc.status_code,
     )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "detail": {
-                "error_code": exc.code.value,
-                "message": exc.message,
-                "provider": exc.provider,
-            }
-        },
-    )
+    detail = {
+        "error_code": exc.code.value,
+        "message": exc.message,
+        "provider": exc.provider,
+    }
+    if getattr(exc, "trail", None):
+        detail["fallback_trail"] = exc.trail
+    if getattr(exc, "retry_after", None):
+        detail["retry_after"] = exc.retry_after
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
 @app.get("/")
@@ -95,8 +97,8 @@ async def root():
         "Config: OLLAMA_BASE_URL=%s DEFAULT_OLLAMA_MODEL=%s openai_key_set=%s google_key_set=%s",
         settings.OLLAMA_BASE_URL,
         settings.DEFAULT_OLLAMA_MODEL,
-        ai_service.is_openai_key_set(),
-        ai_service.is_google_key_set(),
+        keys_service.get_key("openai") is not None,
+        keys_service.get_key("google") is not None,
     )
     return {"message": "Bem-vindo ao MindWeave AI Backend!"}
 

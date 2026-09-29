@@ -12,7 +12,6 @@ from sqlalchemy import text  # noqa: E402
 from app.api.v1 import endpoints_ai  # noqa: E402
 from app.db import Base, engine, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import ai_service  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -28,15 +27,19 @@ def fresh_database():
 
 @pytest.fixture(autouse=True)
 def reset_ai_state():
-    """Chaves e configurações vivem em memória — zera antes de cada teste."""
-    ai_service.set_openai_api_key(None)
-    ai_service.set_google_api_key(None)
+    """Chaves (tabela api_keys) e configurações — zera antes de cada teste."""
+    from app.db import SessionLocal
+    from app.models_db import APIKeyRow
+    with SessionLocal() as session:
+        session.query(APIKeyRow).delete()
+        session.commit()
     endpoints_ai._current_ai_settings.selectedProvider = "ollama"
     endpoints_ai._current_ai_settings.ollamaConfig.baseUrl = "http://localhost:11434"
     endpoints_ai._current_ai_settings.ollamaConfig.model = "llama3"
     yield
-    ai_service.set_openai_api_key(None)
-    ai_service.set_google_api_key(None)
+    with SessionLocal() as session:
+        session.query(APIKeyRow).delete()
+        session.commit()
 
 
 @pytest.fixture

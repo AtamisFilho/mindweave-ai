@@ -20,6 +20,7 @@ export const extractApiError = (error) => {
     code: detail?.error_code || 'UNKNOWN',
     message: detail?.message || 'Erro inesperado ao chamar a IA.',
     provider: detail?.provider || null,
+    trail: detail?.fallback_trail ?? null,
   };
 };
 
@@ -103,6 +104,32 @@ export const deleteMapApi = async (id) => {
 
 export const searchNodesApi = async (q) => {
   const response = await apiClient.get('/maps/search', { params: { q } });
+  return response.data;
+};
+
+// --- Provider Chain (v0.4) ---
+export const getChain = async () => {
+  const response = await apiClient.get('/ai/chain');
+  return response.data;
+};
+
+export const saveChain = async (chain) => {
+  const response = await apiClient.put('/ai/chain', { chain });
+  return response.data;
+};
+
+export const resetChainApi = async () => {
+  const response = await apiClient.post('/ai/chain/reset');
+  return response.data;
+};
+
+export const testProviderApi = async (provider) => {
+  const response = await apiClient.post(`/ai/keys/${provider}/test`);
+  return response.data;
+};
+
+export const getProviderModelsApi = async (provider) => {
+  const response = await apiClient.get(`/ai/models/${provider}`);
   return response.data;
 };
 

@@ -7,9 +7,13 @@ import re
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
 
-from app.services import keys_service
+from app.services import chain_executor, keys_service
 
 router = APIRouter()
+@router.post("/reset-cooldowns", status_code=204)
+async def reset_cooldowns():
+    """Limpa cooldowns do chain (uso: testes E2E e botão Sincronizar)."""
+    chain_executor.reset_cooldowns()
 
 _PROVIDER_PATTERN = re.compile(r"^[a-z0-9_-]{1,40}$")
 

@@ -5,7 +5,21 @@ import { toast } from 'sonner';
  * `onOpenConfig` é chamado para erros de chave ausente — leva o usuário
  * direto ao campo correto no painel de configurações.
  */
-export const notifyAiError = ({ code, message } = {}, { onOpenConfig } = {}) => {
+export const notifyAiError = ({ code, message, trail } = {}, { onOpenConfig } = {}) => {
+  if (code === 'ALL_PROVIDERS_FAILED') {
+    // Trilha resumida: um provedor:motivo por linha (o "por quê" de cada falha)
+    const lines = (trail ?? [])
+      .map((t) => `• ${t.provider}: ${t.kind === 'RATE_LIMIT' ? 'rate limit' : t.kind === 'QUOTA_EXHAUSTED' ? 'quota esgotada' : t.kind === 'NETWORK_ERROR' ? 'indisponível' : (t.message || 'falhou')}`)
+      .join('\n');
+    toast.error('IA indisponível', {
+      description: `${message}${lines ? `\n${lines}` : ''}`,
+      duration: 12000,
+      action: onOpenConfig
+        ? { label: 'Abrir Configurações', onClick: onOpenConfig }
+        : undefined,
+    });
+    return;
+  }
   if (code === 'KEY_NOT_CONFIGURED') {
     toast.error('Chave de API necessária', {
       description: message,

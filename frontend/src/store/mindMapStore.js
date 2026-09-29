@@ -14,6 +14,7 @@ import {
   getLastMap,
   saveMapApi,
   deleteMapApi,
+  getChain,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
@@ -111,6 +112,9 @@ const useMindMapStore = create((set, get) => ({
   researchPanelNodeId: null, // nó exibido no painel (NÃO segue a seleção do canvas)
   researchPanelPinned: false, // pin: novas pesquisas não trocam o contexto do painel
   configFocusKey: null,     // 'openai' | 'google' | null — foca o campo da chave faltante
+  chainConfig: [],          // cadeia de provedores (v0.4 B3)
+  lastProviderUsed: null,   // quem respondeu a última pesquisa (badge do header)
+  fallbackActiveUntil: 0,   // timestamp até quando mostrar "(fallback)" no badge
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -245,6 +249,15 @@ const useMindMapStore = create((set, get) => ({
     }
   },
 
+  fetchChainConfig: async () => {
+    try {
+      const chain = await getChain();
+      set({ chainConfig: chain });
+    } catch { /* backend offline: mantém a cadeia atual */ }
+  },
+
+  setChainConfig: (chain) => set({ chainConfig: chain }),
+
   updateAIConfig: async (newConfig) => {
     set({ aiLoading: true, aiError: null, aiErrorCode: null });
     try {
@@ -270,8 +283,8 @@ const useMindMapStore = create((set, get) => ({
       nodeId: node.id,
       nodeContent: node.data.label,
       ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
-      provider: get().aiConfig.selectedProvider,
-      model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
+      // v0.4 B3: a ORDEM DA CADEIA decide (sem preferred, sem provider fixo)
+      model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
     try {
@@ -289,15 +302,17 @@ const useMindMapStore = create((set, get) => ({
         researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : result.nodeId,
         activePanel: 'research',
         aiLoading: false,
+        lastProviderUsed: result.provider_used ?? null,
+        fallbackActiveUntil: (result.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
       }));
       toast.success('Pesquisa concluída', {
-        description: 'O resultado está no painel de Pesquisas.',
+        description: `Respondido por ${result.provider_used ?? 'IA'}.`,
       });
     } catch (error) {
       const { code, message, provider } = extractApiError(error);
       set({ aiError: message, aiErrorCode: code, aiLoading: false });
       notifyAiError(
-        { code, message, provider },
+        { code, message, provider, trail: extractApiError(error).trail },
         { onOpenConfig: () => get().openConfigForKey(provider) },
       );
     }
@@ -315,8 +330,8 @@ const useMindMapStore = create((set, get) => ({
       nodeId: parentNode.id,
       nodeContent: parentNode.data.label,
       ancestorContext: getAncestorContext(get().nodes, get().edges, nodeId),
-      provider: get().aiConfig.selectedProvider,
-      model_name: get().aiConfig.selectedProvider === 'ollama' ? get().aiConfig.ollamaConfig.model : undefined,
+      // v0.4 B3: a ORDEM DA CADEIA decide (sem preferred, sem provider fixo)
+      model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
     try {
@@ -327,17 +342,17 @@ const useMindMapStore = create((set, get) => ({
           get().addNode(nodeId, undefined, { label: suggestion.content });
         });
         toast.success(`${result.suggestedNodes.length} nós sugeridos`, {
-          description: 'Adicionados como filhos do nó selecionado.',
+          description: `Adicionados como filhos (via ${result.provider_used ?? 'IA'}).`,
         });
       } else {
         toast.info('A IA não retornou sugestões desta vez.');
       }
-      set({ aiLoading: false });
+      set({ aiLoading: false, lastProviderUsed: result.provider_used ?? null });
     } catch (error) {
       const { code, message, provider } = extractApiError(error);
       set({ aiError: message, aiErrorCode: code, aiLoading: false });
       notifyAiError(
-        { code, message, provider },
+        { code, message, provider, trail: extractApiError(error).trail },
         { onOpenConfig: () => get().openConfigForKey(provider) },
       );
     }

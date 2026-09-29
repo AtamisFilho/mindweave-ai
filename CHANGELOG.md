@@ -2,13 +2,36 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
-## [Não lançado] — v0.4 (Bloco 0: fundação de criptografia)
+## [0.4.0] — 2026-09-29
+
+### Adicionado (épico Provider Chain — ver docs/design/provider-chain.md)
+
+- **IA sempre-disponível**: 8 provedores com adaptadores próprios (Groq, Gemini, OpenRouter, Cerebras, DeepSeek, OpenAI, Ollama, LM Studio — 6 deles via uma classe OpenAI-compatible); chain executor com fallback automático, cooldowns por tipo (RateLimit 30s / Quota via Retry-After ou 1h) e trilha de fallbacks na resposta (`provider_used` + `fallback_trail`).
+- **Chaves criptografadas em repouso**: tabela `api_keys` (Fernet), master key de `ENCRYPTION_SECRET` ou auto-gerada; migração automática das chaves do .env no primeiro boot; endpoints CRUD sem jamais ecoar o material.
+- **Classificação fina de 8 tipos de erro** (quota, rate limit, chave inválida, modelo inexistente, contexto estourado, rede, erro do provedor, desconhecido) — incluindo a pegadinha do Gemini responder chave inválida com 400 e o 402 de créditos do OpenRouter/DeepSeek.
+- **UI da Cadeia** (aba IA Config): ordem com ▲▼, toggles com mínimo 1 habilitado, 'Testar conexão' com latência, listagem de modelos locais, Resetar padrão; **badge no header** com 'Usando: X', '(fallback)' pós-rotação e 'IA indisponível'.
+- **Toasts com trilha**: ALL_PROVIDERS_FAILED (503) mostra o motivo de cada provedor tentado.
+- **Testes**: +30 no backend (74→87: adapters, chain, config, cripto) e 6 E2Es novos (3 de API da cadeia com upstreams mockados controláveis + 3 de UI: reordenar, desabilitar, fallback visível no badge).
+
+### Mudado
+- **Select único 'Provedor de IA' removido** (migração B2→B3): a ORDEM DA CADEIA define a prioridade — a UI não envia mais preferred/provider fixo.
+- **ai_service.py slim**: virou montagem de prompts/parsing; gerência de chaves 100% em keys_service (tabela criptografada como fonte única — globais em memória eliminados).
+
+### Notas de migração
+- Chaves do .env migram sozinhas no primeiro boot (idempotente); cadeia padrão semeada de forma idempotente ([groq, gemini, openrouter, cerebras, deepseek, openai, lmstudio, ollama] — locais por último).
+- Quem usava o select único: configure a ordem em IA Config ▸ Cadeia de Provedores.
+
+
 
 ### Adicionado
 - **Chaves de API criptografadas em repouso**: tabela `api_keys` (provider PK + Fernet), master key derivada de `ENCRYPTION_SECRET` (.env) ou auto-gerada em `backend/data/secret.key` (gitignored).
 - **Endpoints `/api/v1/ai/keys`**: PUT (upsert), GET (metadados sem material), DELETE. Provedor desconhecido → 400 `UNKNOWN_PROVIDER`.
 - **Migração automática v0.3**: chaves de `OPENAI_API_KEY`/`GOOGLE_API_KEY` (.env) vão criptografadas para o banco no startup (idempotente); chaves salvas pela UI também são espelhadas no banco.
 - **Testes**: round-trip Fernet, isolamento por provedor, sigilo em logs e respostas (sem o material das chaves).
+- **Endpoints na cadeia (v0.4 B2)**: `deep-research`/`suggest-nodes` executam na cadeia com fallback automático; respostas carregam `provider_used` + `fallback_trail` (com `cooldown_until`); campo legado `provider` fixa um provedor sem fallback; todos-falham → 503 `ALL_PROVIDERS_FAILED` com trilha completa.
+- **Cooldowns** por tipo (RateLimit 30s / Quota Retry-After ou 1h) + endpoint `POST /ai/keys/reset-cooldowns` (testes/E2E e Sincronizar).
+- **E2E da cadeia** (3 cenários) com upstreams mockados controláveis (`tests/mock_upstream.py` nas portas 1234/11434).
+
 
 ## [0.5.0] — 2026-09-28
 

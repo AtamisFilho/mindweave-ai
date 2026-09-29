@@ -73,7 +73,7 @@ async def test_deep_research_ollama_fora_do_ar_503_estruturado(client):
     assert resp.status_code == 503
     detail = resp.json()["detail"]
     assert detail["error_code"] == "PROVIDER_UNREACHABLE"
-    assert detail["provider"] == "Ollama"
+    assert detail["provider"] == "Ollama (local)"
 
 
 @respx.mock
