@@ -44,6 +44,17 @@ class AISuggestNodesResponse(BaseModel):
     provider_used: str
     fallback_trail: list[dict[str, Any]] = []
 
+
+class AIChatMessage(BaseModel):
+    role: Literal['user', 'assistant']
+    content: str
+
+class AIChatStreamRequest(BaseModel):
+    map_id: str
+    question: str
+    history: list[AIChatMessage] = []
+    focus_node_id: str | None = None  # nó selecionado no canvas (âncora do RAG)
+
 class OllamaConfig(BaseModel):
     baseUrl: str = settings.OLLAMA_BASE_URL
     model: str = settings.DEFAULT_OLLAMA_MODEL

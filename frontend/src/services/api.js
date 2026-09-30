@@ -173,3 +173,35 @@ export const streamDeepResearch = async (payload, { onEvent, signal } = {}) => {
 };
 
 export default apiClient;
+
+// Chat com o mapa (v0.4.5 B2): mesmo transporte fetch+SSE da pesquisa
+export const streamChat = async (payload, { onEvent, signal } = {}) => {
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/ai/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    throw { response: { status: 503, data: { detail: { error_code: 'PROVIDER_UNREACHABLE', message: 'Backend inacessível.' } } } };
+  }
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    throw { response: { status: response.status, data } };
+  }
+  const { createSSEParser } = await import('./sse');
+  const parser = createSSEParser(onEvent);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parser.feed(decoder.decode(value, { stream: true }));
+  }
+  parser.flush();
+};
+
+

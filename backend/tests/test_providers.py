@@ -162,11 +162,26 @@ async def test_ollama_404_modelo_inexistente():
 # supports_stream mantém o stub NotImplementedError ---
 
 async def test_adapter_sem_stream_levanta_not_implemented():
-    assert gemini.supports_stream is False
+    # stub local: a BASE mantém o stub; todos os 8 do registry têm stream (B2)
+    from app.providers.base import AIProviderBase
+
+    class NoStream(AIProviderBase):
+        id = "nostub"
+        label = "NoStream"
+        supports_stream = False
+
+        async def complete(self, prompt, model, api_key=None):
+            return "ok"
+
+    stub = NoStream()
+    assert stub.supports_stream is False
     with pytest.raises(NotImplementedError):
-        async for _ in gemini.complete_stream("prompt", "m", "chave"):
+        async for _ in stub.complete_stream("prompt", "m", None):
             pass
 
 
-async def test_groq_tem_suporte_a_stream():
-    assert groq.supports_stream is True
+async def test_todos_do_registry_tem_suporte_a_stream():
+    # matriz fechada na v0.4.5 B2: 8/8 (Gemini incluso)
+    from app.providers import PROVIDERS
+
+    assert all(p.supports_stream for p in PROVIDERS.values())

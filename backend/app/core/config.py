@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # Master key da criptografia de chaves (Fernet). Vazio = gerar/persistir
     # segredo local em backend/data/secret.key
     ENCRYPTION_SECRET: str | None = None
+    # Orçamento do contexto do chat (v0.4.5): conservative para qualquer
+    # modelo free-tier (~6k tokens). Env-configurável.
+    MAX_CONTEXT_CHARS: int = 24_000
+    # Máximo de mensagens persistidas em meta.chat por mapa (v0.4.5)
+    CHAT_HISTORY_LIMIT: int = 40
     # Adicionaremos mais configurações aqui depois (OpenAI Key, Google Key)
 
 settings = Settings()

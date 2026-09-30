@@ -15,11 +15,14 @@ import {
   deleteMapApi,
   getChain,
   streamDeepResearch,
+  streamChat,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { computeLayout } from '../layout/engine';
+
+const CHAT_HISTORY_LIMIT = 40; // teto de mensagens persistidas em meta.chat
 
 // --- Snapshot offline (localStorage) ---
 // Se o autosave falhar por rede, o estado vai para cá; o replay acontece
@@ -116,6 +119,8 @@ const useMindMapStore = create((set, get) => ({
   lastProviderUsed: null,   // quem respondeu a última pesquisa (badge do header)
   fallbackActiveUntil: 0,   // timestamp até quando mostrar "(fallback)" no badge
   streamState: null,        // linha de status viva do streaming (v0.4.5)
+  chat: [],                 // [{role, content, context_meta?}] — persistido em meta.chat
+  chatState: null,          // fase viva do chat (trying/committed/streaming)
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -425,6 +430,7 @@ const useMindMapStore = create((set, get) => ({
       lastSavedAt: Date.now(),
       saveState: 'saved',
       layoutMeta: map.document.meta?.layout ?? { schema: 'balanced-lr', edgeType: null, compact: false },
+      chat: map.document.meta?.chat ?? [],
       researchHistory: [],
       researchPanelNodeId: null,
     }),
@@ -434,7 +440,11 @@ const useMindMapStore = create((set, get) => ({
     return {
       nodes: s.nodes,
       edges: s.edges,
-      meta: { layout: s.layoutMeta },
+      meta: {
+        layout: s.layoutMeta,
+        // teto do histórico: as 40 últimas trocas (~32KB) persistem
+        chat: s.chat.slice(-CHAT_HISTORY_LIMIT),
+      },
     };
   },
 
@@ -701,6 +711,79 @@ const useMindMapStore = create((set, get) => ({
     s.applyLayoutPositions(positions);
   },
 
+  // --- Chat com o mapa (v0.4.5 B2) ---
+  askMap: async (question, focusNodeId = null) => {
+    const trimmed = question.trim();
+    if (!trimmed || get().chatState) return;
+    const mapId = get().currentMapId;
+    set((s) => ({
+      chat: [...s.chat, { role: 'user', content: trimmed }],
+      chatState: { phase: 'trying', providerLabel: null, text: '' },
+    }));
+    let pendingText = '';
+    let flushTimer = null;
+    const flush = () => {
+      flushTimer = null;
+      set((s) => (s.chatState ? { chatState: { ...s.chatState, text: s.chatState.text + pendingText } } : {}));
+      pendingText = '';
+    };
+
+    try {
+      let donePayload = null;
+      await streamChat({
+        map_id: mapId,
+        question: trimmed,
+        history: get().chat.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+        focus_node_id: focusNodeId,
+      }, {
+        onEvent: (ev) => {
+          if (ev.event === 'chain') {
+            set((s) => (s.chatState ? { chatState: { ...s.chatState,
+              phase: ev.status === 'committed' ? 'committed' : 'trying',
+              providerLabel: ev.provider_label ?? ev.provider } } : {}));
+          } else if (ev.event === 'token') {
+            pendingText += ev.delta;
+            if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (ev.event === 'done') {
+            donePayload = ev;
+          } else if (ev.event === 'error') {
+            throw { response: { status: 503, data: { detail: {
+              error_code: ev.error_code, message: ev.message,
+              provider: 'chain', fallback_trail: ev.fallback_trail ?? [],
+            } } } };
+          }
+        },
+      });
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flush();
+
+      const meta = donePayload?.context_meta ?? null;
+      set((s) => ({
+        chat: [...s.chat, {
+          role: 'assistant',
+          content: s.chatState?.text ?? '',
+          context_meta: meta,
+        }],
+        chatState: null,
+        lastProviderUsed: donePayload?.provider_used ?? null,
+      }));
+    } catch (error) {
+      if (flushTimer) clearTimeout(flushTimer);
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ chatState: null });
+      notifyAiError(
+        { code, message, provider, trail },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
+      // remove a pergunta órfã (não houve resposta): o usuário reformula
+      set((s) => ({ chat: s.chat.filter((m, i, arr) => !(i === arr.length - 1 && m.role === 'user')) }));
+    }
+  },
+
+  clearChat: () => set({ chat: [], chatState: null }),
+
+  hydrateChat: (chatHistory) => set({ chat: Array.isArray(chatHistory) ? chatHistory : [] }),
+
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
   clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
@@ -751,7 +834,8 @@ useMindMapStore.subscribe((state, prev) => {
   if (
     state.nodes !== prev.nodes ||
     state.edges !== prev.edges ||
-    state.mapTitle !== prev.mapTitle
+    state.mapTitle !== prev.mapTitle ||
+    state.chat !== prev.chat
   ) {
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {

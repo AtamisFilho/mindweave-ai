@@ -14,6 +14,7 @@ const MindMapCanvas = React.lazy(() => import('./components/MindMap/MindMapCanva
 const AISettingsPanel = React.lazy(() => import('./components/AISettings/AISettingsPanel'));
 const ProviderChainConfig = React.lazy(() => import('./components/AISettings/ProviderChainConfig'));
 const ResearchPanel = React.lazy(() => import('./components/Research/ResearchPanel'));
+const ChatPanel = React.lazy(() => import('./components/Chat/ChatPanel'));
 
 function App() {
   const {
@@ -123,6 +124,13 @@ function App() {
               Pesquisas
             </Button>
             <Button
+              onClick={() => setActivePanel('chat')}
+              variant={activePanel === 'chat' ? 'primary' : 'outline'}
+              className="flex-1 text-xs py-1.5"
+            >
+              Chat
+            </Button>
+            <Button
               onClick={() => setActivePanel('config')}
               variant={activePanel === 'config' ? 'primary' : 'outline'}
               className="flex-1 text-xs py-1.5"
@@ -147,6 +155,7 @@ function App() {
               </div>
             )}
             {activePanel === 'research' && <ResearchPanel />}
+            {activePanel === 'chat' && <ChatPanel />}
             {activePanel === 'config' && (
               <div className="space-y-4">
                 <ProviderChainConfig />
