@@ -24,6 +24,7 @@ const MapsMenu = () => {
   })));
 
   const [open, setOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [maps, setMaps] = useState([]);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState(null); // null = lista completa; [] = busca sem hits
@@ -83,6 +84,9 @@ const MapsMenu = () => {
         Mapas <span className="text-[10px]">▼</span>
       </button>
 
+      {generateOpen && (
+        <GenerateMapModal open onClose={() => setGenerateOpen(false)} />
+      )}
       {open && (
         <div className="absolute right-0 top-full mt-1 w-80 bg-white dark:bg-gray-800 rounded-md shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
           <button
@@ -90,6 +94,13 @@ const MapsMenu = () => {
             className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700"
           >
             ＋ Novo mapa
+          </button>
+          <button
+            onClick={() => { setGenerateOpen(true); setOpen(false); }}
+            className="w-full text-left px-3 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+            title="A IA cria um mapa NOVO a partir de um tópico"
+          >
+            ✨ Gerar mapa a partir de um tópico…
           </button>
 
           <div className="px-3 pb-2">
