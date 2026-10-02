@@ -158,9 +158,30 @@ async def test_ollama_404_modelo_inexistente():
     assert exc.value.kind.value == "MODEL_NOT_FOUND"
 
 
-# --- streaming (Diretriz 1: interface pronta, implementação na v0.4.5) ---
+# --- streaming (v0.4.5): interface pronta desde a v0.4; adapter sem
+# supports_stream mantém o stub NotImplementedError ---
 
-async def test_complete_stream_ainda_nao_implementado():
+async def test_adapter_sem_stream_levanta_not_implemented():
+    # stub local: a BASE mantém o stub; todos os 8 do registry têm stream (B2)
+    from app.providers.base import AIProviderBase
+
+    class NoStream(AIProviderBase):
+        id = "nostub"
+        label = "NoStream"
+        supports_stream = False
+
+        async def complete(self, prompt, model, api_key=None):
+            return "ok"
+
+    stub = NoStream()
+    assert stub.supports_stream is False
     with pytest.raises(NotImplementedError):
-        async for _ in groq.complete_stream("prompt", "m", "chave"):
+        async for _ in stub.complete_stream("prompt", "m", None):
             pass
+
+
+async def test_todos_do_registry_tem_suporte_a_stream():
+    # matriz fechada na v0.4.5 B2: 8/8 (Gemini incluso)
+    from app.providers import PROVIDERS
+
+    assert all(p.supports_stream for p in PROVIDERS.values())

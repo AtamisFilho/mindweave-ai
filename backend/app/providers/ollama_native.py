@@ -1,4 +1,6 @@
 """Adapter nativo do Ollama (localhost — fallback soberano da cadeia)."""
+import json
+
 import httpx
 
 from app.providers.base import AIProviderBase, ErrorKind, ProviderCallError
@@ -13,6 +15,7 @@ class OllamaNativeProvider(AIProviderBase):
     default_model = "llama3"
     requires_key = False
     local = True
+    supports_stream = True
 
     async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
         payload = {"model": model, "prompt": prompt, "stream": False}
@@ -41,6 +44,55 @@ class OllamaNativeProvider(AIProviderBase):
                 retry_after=self.retry_after_from(response),
             )
         return response.json().get("response", "").strip()
+
+    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None):
+        """Streaming NDJSON nativo do Ollama: cada linha {response: "..."}.
+
+        O fim legítimo é a linha {"done": true}; fim sem ela = truncamento.
+        """
+        payload = {"model": model, "prompt": prompt, "stream": True}
+        saw_done = False
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                async with client.stream(
+                    "POST", f"{self.base_url.rstrip('/')}/api/generate", json=payload,
+                ) as response:
+                    if response.status_code != 200:
+                        body = (await response.aread()).decode(errors="replace")
+                        raise ProviderCallError(
+                            self.id,
+                            self.classify(response.status_code, body),
+                            f"O Ollama retornou HTTP {response.status_code}.",
+                            status_code=self._response_status(response.status_code, body),
+                            retry_after=self.retry_after_from(response),
+                        )
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        obj = json.loads(line)
+                        if obj.get("done"):
+                            saw_done = True
+                            break
+                        delta = obj.get("response")
+                        if delta:
+                            yield delta
+        except httpx.TimeoutException as exc:
+            raise ProviderCallError(
+                self.id, ErrorKind.NETWORK_ERROR,
+                "O Ollama não respondeu a tempo (timeout).", status_code=504,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderCallError(
+                self.id, ErrorKind.NETWORK_ERROR,
+                "Não foi possível conectar ao Ollama.", status_code=503,
+            ) from exc
+
+        if not saw_done:
+            raise ProviderCallError(
+                self.id, ErrorKind.NETWORK_ERROR,
+                "O Ollama interrompeu o stream antes de concluir.",
+                status_code=502,
+            )
 
     def _response_status(self, status_code: int, body: str) -> int:
         kind = self.classify(status_code, body)

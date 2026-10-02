@@ -39,10 +39,16 @@ test.beforeEach(async ({ page }) => {
     }
     return route.fulfill({ json: [] }); // GET lista vazia
   });
-  await page.route('**/api/v1/ai/deep-research', async (route) => {
-    const body = route.request().postDataJSON();
+  await page.route('**/api/v1/ai/deep-research/stream', async (route) => {
+    // v0.4.5: a pesquisa usa o endpoint SSE — mock devolve o corpo de eventos
     await new Promise((r) => setTimeout(r, 300)); // deixa o "IA Processando..." aparecer
-    await route.fulfill({ json: { nodeId: body.nodeId, researchSummary: MD_FIXTURE } });
+    const sse = [
+      { event: 'chain', provider: 'groq', provider_label: 'Groq', status: 'trying' },
+      { event: 'chain', provider: 'groq', provider_label: 'Groq', status: 'committed' },
+      { event: 'token', delta: MD_FIXTURE },
+      { event: 'done', provider_used: 'Groq', model: 'llama', fallback_trail: [] },
+    ].map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join('');
+    await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
   });
   await page.route('**/api/v1/ai/suggest-nodes', (route) =>
     route.fulfill({ json: { nodeId: 'x', suggestedNodes: [{ content: 'Sugestão A' }, { content: 'Sugestão B' }] } })

@@ -44,6 +44,35 @@ class AISuggestNodesResponse(BaseModel):
     provider_used: str
     fallback_trail: list[dict[str, Any]] = []
 
+
+# Expansão em lote (v0.4.5 B4): o backend resolve rótulos/ancestrais a partir
+# do documento persistido — o frontend envia apenas os ids.
+class AISuggestNodesBatchRequest(BaseModel):
+    map_id: str
+    node_ids: list[str]
+    model_name: str | None = None
+
+class AISuggestNodesBatchResult(BaseModel):
+    node_id: str
+    suggestedNodes: list[AISuggestedNode] = []
+    provider_used: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+
+class AISuggestNodesBatchResponse(BaseModel):
+    results: list[AISuggestNodesBatchResult]
+
+
+class AIChatMessage(BaseModel):
+    role: Literal['user', 'assistant']
+    content: str
+
+class AIChatStreamRequest(BaseModel):
+    map_id: str
+    question: str
+    history: list[AIChatMessage] = []
+    focus_node_id: str | None = None  # nó selecionado no canvas (âncora do RAG)
+
 class OllamaConfig(BaseModel):
     baseUrl: str = settings.OLLAMA_BASE_URL
     model: str = settings.DEFAULT_OLLAMA_MODEL

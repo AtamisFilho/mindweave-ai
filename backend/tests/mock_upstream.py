@@ -15,7 +15,8 @@ Modos:
 """
 import json
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1])
 STATE = {"mode": sys.argv[2]}
@@ -45,6 +46,32 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
 
+        # --- modos de stream (v0.4.5): corpo progressivo + sentinel ---
+        # O FORMATO segue a PORTA (1234 = SSE OpenAI, 11434 = NDJSON Ollama) —
+        # o modo controla apenas se o sentinel é enviado (mid-death = não).
+        NL2 = chr(10) + chr(10)
+        if mode in ("stream-openai", "stream-ollama", "stream-mid-death"):
+            is_openai = PORT == 1234
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream" if is_openai else "application/json")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            label = "lm studio" if PORT == 1234 else "ollama"
+            parts = ["resposta ", f"mock do {label}", " em stream"]
+            for part in parts:
+                chunk = ('data: ' + json.dumps({"choices": [{"delta": {"content": part}}]}) if is_openai
+                         else json.dumps({"response": part})) + NL2
+                self.wfile.write(chunk.encode())
+                self.wfile.flush()
+                time.sleep(0.3)
+            if mode != "stream-mid-death":
+                sentinel = ('data: [DONE]' if is_openai else json.dumps({"response": "", "done": True})) + NL2
+                self.wfile.write(sentinel.encode())
+                self.wfile.flush()
+            else:
+                self.close_connection = True  # morre SEM o sentinel
+            return
+
         if mode == "429":
             body = json.dumps({"error": {"message": "Rate limit reached per minute"}}).encode()
             self.send_response(429)
@@ -69,6 +96,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("127.0.0.1", PORT), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"mock upstream na porta {PORT} (modo {STATE['mode']})", flush=True)
     server.serve_forever()

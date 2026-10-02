@@ -6,8 +6,8 @@ import {
 } from '@xyflow/react';
 import {
   getAIConfig, updateAIConfig as apiUpdateAIConfig,
-  performDeepResearch as apiPerformDeepResearch,
   suggestNewNodes as apiSuggestNewNodes,
+  suggestNodesBatch as apiSuggestNodesBatch,
   extractApiError,
   createMap as apiCreateMap,
   getMap as apiGetMap,
@@ -15,11 +15,21 @@ import {
   saveMapApi,
   deleteMapApi,
   getChain,
+  streamDeepResearch,
+  streamChat,
+  generateMapApi,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { computeLayout } from '../layout/engine';
+
+const CHAT_HISTORY_LIMIT = 40; // teto de mensagens persistidas em meta.chat
+
+// Pergunta fixa do "Resumir mapa" (v0.4.5 B4): reusa o /ai/chat/stream —
+// nenhuma superfície nova de UI ou endpoint; a resposta nasce na aba Chat.
+const SUMMARY_QUESTION =
+  'Faça um resumo executivo deste mapa mental, destacando os temas principais e suas relações hierárquicas.';
 
 // --- Snapshot offline (localStorage) ---
 // Se o autosave falhar por rede, o estado vai para cá; o replay acontece
@@ -115,6 +125,13 @@ const useMindMapStore = create((set, get) => ({
   chainConfig: [],          // cadeia de provedores (v0.4 B3)
   lastProviderUsed: null,   // quem respondeu a última pesquisa (badge do header)
   fallbackActiveUntil: 0,   // timestamp até quando mostrar "(fallback)" no badge
+  streamState: null,        // linha de status viva do streaming (v0.4.5)
+  chat: [],                 // [{role, content, context_meta?}] — persistido em meta.chat
+  chatState: null,          // fase viva do chat (trying/committed/streaming)
+  lastSelectedNodeId: null, // último nó que o usuário selecionou (v0.4.5 B4)
+  selectedCount: 0,         // nº de nós selecionados (botão de expansão em lote)
+  generatingMap: false,     // geração de mapa a partir de tópico (v0.4.5 B3)
+  generateError: null,
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -272,10 +289,23 @@ const useMindMapStore = create((set, get) => ({
   
   // --- AI Feature actions ---
   performDeepResearch: async (nodeId) => {
-    set({ aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null });
+    // UMA pesquisa viva por vez (o último pedido vence): aborta a anterior —
+    // duas correntes compartilham streamState e o resumo da primeira sai
+    // vazio (tokens dela descartados quando a segunda completa).
+    researchAbort?.abort();
+    const abort = new AbortController();
+    researchAbort = abort;
+
+    set({
+      aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null,
+      // linha de status viva da cadeia (v0.4.5) — o painel abre JUNTO:
+      // sem isso o usuário não vê trying/committed/trail de lugar nenhum
+      activePanel: 'research',
+      streamState: { phase: 'trying', providerLabel: null, trail: [], text: '' },
+    });
     const node = get().nodes.find(n => n.id === nodeId);
     if (!node) {
-      set({ aiError: 'Nó não encontrado.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false });
+      set({ aiError: 'Nó não encontrado.', aiErrorCode: 'NODE_NOT_FOUND', aiLoading: false, streamState: null });
       return;
     }
 
@@ -287,32 +317,91 @@ const useMindMapStore = create((set, get) => ({
       model_name: get().aiConfig.ollamaConfig?.model || undefined,
     };
 
+    // Buffer de renderização: deltas chegam centenas/s — flush a cada 50ms
+    let pendingText = '';
+    let flushTimer = null;
+    const flush = () => {
+      flushTimer = null;
+      if (researchAbort !== abort) return; // suplantada: não escreve no estado alheio
+      set((s) => (s.streamState ? { streamState: { ...s.streamState, text: s.streamState.text + pendingText } } : {}));
+      pendingText = '';
+    };
+
     try {
-      const result = await apiPerformDeepResearch(researchData); // from api.js
+      let donePayload = null;
+      await streamDeepResearch(researchData, {
+        signal: abort.signal,
+        onEvent: (ev) => {
+          if (ev.event === 'chain') {
+            set((s) => {
+              if (!s.streamState) return {};
+              if (ev.status === 'failed' || ev.status === 'skipped') {
+                return { streamState: { ...s.streamState, trail: [...s.streamState.trail, {
+                  provider: ev.provider_label ?? ev.provider,
+                  kind: ev.kind, message: ev.message, skipped: ev.status === 'skipped',
+                }] } };
+              }
+              return { streamState: { ...s.streamState,
+                phase: ev.status === 'committed' ? 'committed' : 'trying',
+                providerLabel: ev.provider_label ?? ev.provider } };
+            });
+          } else if (ev.event === 'token') {
+            pendingText += ev.delta;
+            if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (ev.event === 'done') {
+            donePayload = { provider_used: ev.provider_used, fallback_trail: ev.fallback_trail ?? [] };
+          } else if (ev.event === 'error') {
+            throw { response: { status: 503, data: { detail: {
+              error_code: ev.error_code, message: ev.message,
+              provider: 'chain', fallback_trail: ev.fallback_trail ?? [],
+            } } } };
+          }
+        },
+      });
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      if (researchAbort !== abort) return; // suplantada: a mais nova escreve
+      flush(); // done pode chegar antes do timer de 50ms — descarrega o texto pendente
+
+      const summary = get().streamState?.text ?? '';
       const entry = {
-        id: `${Date.now()}-${result.nodeId}`,
-        nodeId: result.nodeId,
-        summary: result.researchSummary,
+        id: `${Date.now()}-${researchData.nodeId}`,
+        nodeId: researchData.nodeId,
+        summary,
         createdAt: Date.now(),
       };
       set((s) => ({
-        researchResult: { nodeId: result.nodeId, summary: result.researchSummary },
+        researchResult: { nodeId: researchData.nodeId, summary },
         researchHistory: [entry, ...s.researchHistory],
-        // Painel segue o "último nó pesquisado", exceto quando fixado (pin)
-        researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : result.nodeId,
+        researchPanelNodeId: s.researchPanelPinned ? s.researchPanelNodeId : researchData.nodeId,
         activePanel: 'research',
         aiLoading: false,
-        lastProviderUsed: result.provider_used ?? null,
-        fallbackActiveUntil: (result.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
+        lastProviderUsed: donePayload.provider_used ?? null,
+        fallbackActiveUntil: (donePayload.fallback_trail?.length ?? 0) > 0 ? Date.now() + 12000 : 0,
+        streamState: null,
       }));
       toast.success('Pesquisa concluída', {
-        description: `Respondido por ${result.provider_used ?? 'IA'}.`,
+        description: `Respondido por ${donePayload.provider_used ?? 'IA'}.`,
       });
     } catch (error) {
-      const { code, message, provider } = extractApiError(error);
-      set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      if (flushTimer) clearTimeout(flushTimer);
+      if (abort.signal.aborted) {
+        // suplantada por uma pesquisa mais nova: NÃO toca no estado —
+        // streamState/aiLoading agora são da corrente
+        return;
+      }
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false, streamState: null });
+      if (code === 'PROVIDER_STREAM_INTERRUPTED') {
+        // commit point já passado: sem fallback — o cliente decide o retry
+        toast.error('Conexão interrompida', {
+          description: message,
+          duration: 12000,
+          action: { label: 'Tentar novamente', onClick: () => get().performDeepResearch(nodeId) },
+        });
+        return;
+      }
       notifyAiError(
-        { code, message, provider, trail: extractApiError(error).trail },
+        { code, message, provider, trail },
         { onOpenConfig: () => get().openConfigForKey(provider) },
       );
     }
@@ -358,6 +447,55 @@ const useMindMapStore = create((set, get) => ({
     }
   },
 
+  // Expansão em lote (v0.4.5 B4): N nós selecionados -> filhos sugeridos.
+  // O backend resolve rótulos/ancestrais do documento persistido; a inserção
+  // usa o MESMO addNode atômico do fluxo individual (nó + aresta no mesmo set).
+  // Limitação consciente: REST sem streaming (o batch em stream é evolução).
+  suggestNodesBatch: async (nodeIds) => {
+    const ids = [...new Set(nodeIds ?? [])].slice(0, 5);
+    if (ids.length === 0 || get().aiLoading) return;
+    const mapId = get().currentMapId;
+    if (!mapId) {
+      toast.error('Sincronize o mapa antes de expandir em lote.');
+      return;
+    }
+    set({ aiLoading: true, aiError: null, aiErrorCode: null });
+    try {
+      const result = await apiSuggestNodesBatch({ map_id: mapId, node_ids: ids });
+      let added = 0;
+      const failures = [];
+      for (const r of result.results ?? []) {
+        if (r.error_code) { failures.push(r); continue; }
+        for (const suggestion of r.suggestedNodes ?? []) {
+          get().addNode(r.node_id, undefined, { label: suggestion.content });
+          added += 1;
+        }
+        if (r.provider_used) set({ lastProviderUsed: r.provider_used });
+      }
+      set({ aiLoading: false });
+      if (added > 0) {
+        toast.success(`${added} nós sugeridos adicionados`, {
+          description: failures.length
+            ? `${failures.length} nó${failures.length > 1 ? 's' : ''} não puderam ser expandidos (${failures[0].message ?? failures[0].error_code}).`
+            : 'Inseridos como filhos dos nós selecionados.',
+        });
+      } else if (failures.length > 0) {
+        toast.error('Nenhum nó foi expandido', {
+          description: failures[0].message ?? failures[0].error_code ?? 'A cadeia de IA falhou.',
+        });
+      } else {
+        toast.info('A IA não retornou sugestões desta vez.');
+      }
+    } catch (error) {
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      notifyAiError(
+        { code, message, provider, trail },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
+    }
+  },
+
   // --- Persistência (v0.3) ---
   _applyServerMap: (map) =>
     set({
@@ -369,6 +507,7 @@ const useMindMapStore = create((set, get) => ({
       lastSavedAt: Date.now(),
       saveState: 'saved',
       layoutMeta: map.document.meta?.layout ?? { schema: 'balanced-lr', edgeType: null, compact: false },
+      chat: map.document.meta?.chat ?? [],
       researchHistory: [],
       researchPanelNodeId: null,
     }),
@@ -378,7 +517,11 @@ const useMindMapStore = create((set, get) => ({
     return {
       nodes: s.nodes,
       edges: s.edges,
-      meta: { layout: s.layoutMeta },
+      meta: {
+        layout: s.layoutMeta,
+        // teto do histórico: as 40 últimas trocas (~32KB) persistem
+        chat: s.chat.slice(-CHAT_HISTORY_LIMIT),
+      },
     };
   },
 
@@ -645,10 +788,152 @@ const useMindMapStore = create((set, get) => ({
     s.applyLayoutPositions(positions);
   },
 
+  // --- Chat com o mapa (v0.4.5 B2) ---
+  askMap: async (question, focusNodeId = null) => {
+    const trimmed = question.trim();
+    if (!trimmed || get().chatState) return false;
+    const mapId = get().currentMapId;
+    set((s) => ({
+      chat: [...s.chat, { role: 'user', content: trimmed }],
+      chatState: { phase: 'trying', providerLabel: null, text: '' },
+    }));
+    let pendingText = '';
+    let flushTimer = null;
+    const flush = () => {
+      flushTimer = null;
+      set((s) => (s.chatState ? { chatState: { ...s.chatState, text: s.chatState.text + pendingText } } : {}));
+      pendingText = '';
+    };
+
+    try {
+      let donePayload = null;
+      await streamChat({
+        map_id: mapId,
+        question: trimmed,
+        history: get().chat.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+        focus_node_id: focusNodeId,
+      }, {
+        onEvent: (ev) => {
+          if (ev.event === 'chain') {
+            set((s) => (s.chatState ? { chatState: { ...s.chatState,
+              phase: ev.status === 'committed' ? 'committed' : 'trying',
+              providerLabel: ev.provider_label ?? ev.provider } } : {}));
+          } else if (ev.event === 'token') {
+            pendingText += ev.delta;
+            if (!flushTimer) flushTimer = setTimeout(flush, 50);
+          } else if (ev.event === 'done') {
+            donePayload = ev;
+          } else if (ev.event === 'error') {
+            throw { response: { status: 503, data: { detail: {
+              error_code: ev.error_code, message: ev.message,
+              provider: 'chain', fallback_trail: ev.fallback_trail ?? [],
+            } } } };
+          }
+        },
+      });
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flush();
+
+      const meta = donePayload?.context_meta ?? null;
+      set((s) => ({
+        chat: [...s.chat, {
+          role: 'assistant',
+          content: s.chatState?.text ?? '',
+          context_meta: meta,
+        }],
+        chatState: null,
+        lastProviderUsed: donePayload?.provider_used ?? null,
+      }));
+      return true;
+    } catch (error) {
+      if (flushTimer) clearTimeout(flushTimer);
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ chatState: null });
+      notifyAiError(
+        { code, message, provider, trail },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
+      // remove a pergunta órfã (não houve resposta): o usuário reformula
+      set((s) => ({ chat: s.chat.filter((m, i, arr) => !(i === arr.length - 1 && m.role === 'user')) }));
+      return false;
+    }
+  },
+
+  // Resumir mapa (v0.4.5 B4): pergunta fixa no chat — sem endpoint nem UI nova.
+  // Abre a aba Chat ANTES de perguntar: o usuário vê o resumo nascer em stream.
+  summarizeMap: async () => {
+    if (get().chatState) return;
+    set({ activePanel: 'chat' });
+    const ok = await get().askMap(SUMMARY_QUESTION);
+    if (ok) toast.success('Resumo gerado na aba Chat');
+  },
+
+  clearChat: () => set({ chat: [], chatState: null }),
+
+  hydrateChat: (chatHistory) => set({ chat: Array.isArray(chatHistory) ? chatHistory : [] }),
+
+  // --- Geração de mapa (v0.4.5 B3) — NÃO-DESTRUTIVA: cria mapa NOVO ---
+  // O mapa atual nunca é sobrescrito; o toast oferece "Voltar ao anterior".
+  generateMap: async (topic, depth = 3, breadth = 5) => {
+    const clean = topic.trim();
+    if (!clean || get().generatingMap) return;
+    const previousMapId = get().currentMapId;
+    set({ generatingMap: true, generateError: null });
+
+    try {
+      const result = await generateMapApi({ topic: clean, depth, breadth });
+      const { treeToGraph } = await import('../utils/treeToGraph');
+      const graph = treeToGraph(result.tree);
+
+      // persiste o mapa novo (Fricção Zero: já nasce salvo)
+      const created = await apiCreateMap({
+        title: clean.slice(0, 80),
+        document: {
+          nodes: graph.nodes, edges: graph.edges,
+          meta: { layout: { schema: 'balanced-lr', edgeType: null, compact: false } },
+        },
+      });
+
+      set({
+        nodes: graph.nodes,
+        edges: graph.edges,
+        mapTitle: created.title,
+        currentMapId: created.id,
+        mapVersion: created.version,
+        layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
+        chat: [], researchHistory: [], researchPanelNodeId: null,
+        aiLoading: false, generatingMap: false,
+        lastProviderUsed: result.provider_used ?? null,
+      });
+      toast.success(`Mapa "${created.title}" gerado`, {
+        description: `${graph.count} nós · via ${result.provider_used}.`,
+        action: previousMapId && previousMapId !== created.id
+          ? { label: 'Voltar ao anterior', onClick: () => get().loadMap(previousMapId) }
+          : undefined,
+      });
+    } catch (error) {
+      set({ generatingMap: false });
+      const { message } = extractApiError(error);
+      set({ generateError: message });
+      toast.error('Falha ao gerar o mapa', { description: message });
+    }
+  },
+
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
   clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
   clearResearchResult: () => set({ researchResult: null }),
+
+  // Seleção múltipla (v0.4.5 B4): o CustomNode reporta transições de seleção;
+  // aqui ficam o CONTAGEM e o ÚLTIMO selecionado (ordem real de clique).
+  noteSelection: (nodeId, selected) => {
+    const s = get();
+    const count = s.nodes.filter((n) => n.selected).length;
+    const patch = {};
+    if (selected && s.lastSelectedNodeId !== nodeId) patch.lastSelectedNodeId = nodeId;
+    if (count !== s.selectedCount) patch.selectedCount = count;
+    if (Object.keys(patch).length) set(patch);
+  },
 
   toggleDarkMode: () =>
     set((s) => {
@@ -683,6 +968,9 @@ const useMindMapStore = create((set, get) => ({
 // Guarda: durante a hidratação (bootstrap/load/create) o autosave fica suspenso.
 let autosaveTimer = null;
 
+// Pesquisa viva corrente (AbortController) — UMA por vez; a mais nova vence
+let researchAbort = null;
+
 // B4: assinatura ESTRUTURAL (ids) — muda ao adicionar/remover/conectar,
 // mas NÃO em drag de posição: o auto-layout não briga com o usuário.
 const structuralSignature = (s) =>
@@ -695,7 +983,8 @@ useMindMapStore.subscribe((state, prev) => {
   if (
     state.nodes !== prev.nodes ||
     state.edges !== prev.edges ||
-    state.mapTitle !== prev.mapTitle
+    state.mapTitle !== prev.mapTitle ||
+    state.chat !== prev.chat
   ) {
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {

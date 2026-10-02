@@ -44,8 +44,8 @@ test('(a) reordenar cadeia: Gemini vira o topo e responde', async ({ page, reque
   await expect(page.getByText('Cadeia salva').first()).toBeVisible({ timeout: 10000 });
 
   // Ollama mockado ok; LM Studio mockado ok também (estaria em 2º)
-  await request.get('http://127.0.0.1:11434/control?mode=ok-ollama');
-  await request.get('http://127.0.0.1:1234/control?mode=ok-openai');
+  await request.get('http://127.0.0.1:11434/control?mode=stream-ollama');
+  await request.get('http://127.0.0.1:1234/control?mode=stream-openai');
 
   // dispara pesquisa pelo nó raiz
   await page.locator('.react-flow__node').first().click();
@@ -84,7 +84,7 @@ test('(b) desabilitar o topo: pesquisa pula para o próximo da cadeia', async ({
   await expect(page.getByText('Cadeia salva').first()).toBeVisible({ timeout: 10000 });
 
   // mock do ollama no ar (não deve ser chamado), lm studio respondendo
-  await request.get('http://127.0.0.1:1234/control?mode=ok-openai');
+  await request.get('http://127.0.0.1:1234/control?mode=stream-openai');
 
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Pesquisa IA' }).click();
@@ -102,7 +102,7 @@ test('(c) fallback visível no header quando o topo falha com 429', async ({ pag
   // então o topo EFETIVO é lm studio. Forçamos o lm studio a 429:
   // o chain cai para o ollama e o badge deve mostrar o fallback âmbar.
   await request.get('http://127.0.0.1:1234/control?mode=429');
-  await request.get('http://127.0.0.1:11434/control?mode=ok-ollama');
+  await request.get('http://127.0.0.1:11434/control?mode=stream-ollama');
 
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Pesquisa IA' }).click();

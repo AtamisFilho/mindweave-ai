@@ -8,7 +8,9 @@ Decisões (design doc §3/§4 + Diretriz 2 do B1):
 - A trilha de fallbacks volta na exceção/resposta para o toast.
 - Locais (Ollama/LM Studio) nunca falham por quota — fallback soberano.
 """
+import logging
 import time
+from collections.abc import AsyncIterator
 
 from app.core.errors import AIProviderError, ErrorCode, ErrorKind
 from app.providers import PROVIDERS
@@ -164,3 +166,151 @@ async def execute_chain(
         kind=ErrorKind.PROVIDER_ERROR,
         trail=trail,
     ) from last_error
+
+
+# ---------------------------------------------------------------------------
+# Streaming (v0.4.5 — protocolo do docs/design/ai-experience.md)
+# Fallback AUTOMÁTICO somente ANTES do primeiro token (commit point). Depois
+# do commit, o stream está travado no provedor: falha vira
+# PROVIDER_STREAM_INTERRUPTED com retryable=true.
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger("app.chain")
+
+
+async def execute_chain_stream(
+    prompt: str,
+    *,
+    model: str | None = None,
+    preferred: str | None = None,
+) -> AsyncIterator[dict]:
+    """Executa o prompt na cadeia emitindo eventos de stream:
+
+    {"event": "chain",  provider, provider_label, status: trying|failed|skipped|committed, kind?, message?}
+    {"event": "token",  delta}
+    {"event": "done",   provider_used, provider_label, model, fallback_trail}
+    {"event": "error",  error_code, message, fallback_trail, retryable}
+
+    Fallback só antes do commit; após o commit, erro com retryable=true.
+    """
+    chain = build_chain(preferred)
+    if not chain:
+        yield {
+            "event": "error",
+            "error_code": ErrorCode.KEY_NOT_CONFIGURED.value,
+            "message": "Nenhum provedor configurado na cadeia.",
+            "fallback_trail": [],
+            "retryable": False,
+        }
+        return
+
+    trail: list[dict] = []
+
+    for provider_id in chain:
+        provider = PROVIDERS[provider_id]
+        if provider_in_cooldown(provider_id):
+            trail.append({
+                "provider": provider.label,
+                "kind": ErrorKind.RATE_LIMIT.value,
+                "message": "Provedor em cooldown (falha recente) — pulado.",
+                "cooldown_until": int(_COOLDOWNS.get(provider_id, 0)),
+                "skipped": True,
+            })
+            yield {
+                "event": "chain",
+                "provider": provider_id,
+                "provider_label": provider.label,
+                "status": "skipped",
+                "kind": ErrorKind.RATE_LIMIT.value,
+                "message": "Em cooldown — pulado.",
+            }
+            continue
+
+        model_to_use = model if (model and provider_id == preferred) else provider.default_model
+        api_key = keys_service.get_key(provider_id) if provider.requires_key else None
+
+        yield {
+            "event": "chain",
+            "provider": provider_id,
+            "provider_label": provider.label,
+            "status": "trying",
+        }
+
+        # Adapter sem capacidade de stream: complete() vira um único token
+        if not provider.supports_stream:
+            started = time.perf_counter()
+            try:
+                content = await provider.complete(prompt, model_to_use, api_key)
+            except Exception as exc:  # noqa: BLE001
+                kind = _kind_of(exc)
+                trail.append({"provider": provider.label, "kind": kind.value, "message": str(exc)[:200]})
+                _apply_cooldown(provider_id, kind, getattr(exc, "retry_after", None))
+                yield {"event": "chain", "provider": provider_id, "provider_label": provider.label,
+                       "status": "failed", "kind": kind.value, "message": str(exc)[:200]}
+                continue
+            logger.debug("chain TTFT(no-stream): provider=%s model=%s ttft_ms=%d",
+                         provider_id, model_to_use, int((time.perf_counter() - started) * 1000))
+            yield {"event": "chain", "provider": provider_id, "provider_label": provider.label, "status": "committed"}
+            yield {"event": "token", "delta": content}
+            yield {"event": "done", "provider_used": provider.label, "provider_label": provider.label,
+                   "model": model_to_use, "fallback_trail": trail}  # provider_used = label (contrato REST v0.4)
+            return
+
+        # Caminho streaming — o stream_iter é criado antes do try e o finally
+        # cobre TODO o trecho com upstream aberto: abort do cliente (ou erro)
+        # propaga o fechamento até o httpx do adapter.
+        stream_iter = provider.complete_stream(prompt, model_to_use, api_key)
+        started = time.perf_counter()
+        committed = False
+        try:
+            async for delta in stream_iter:
+                if not committed:
+                    committed = True
+                    logger.debug("chain TTFT: provider=%s model=%s ttft_ms=%d",
+                                 provider_id, model_to_use, int((time.perf_counter() - started) * 1000))
+                    yield {"event": "chain", "provider": provider_id,
+                           "provider_label": provider.label, "status": "committed"}
+                yield {"event": "token", "delta": delta}
+            # stream completo (sentinel recebido no adapter)
+            yield {"event": "done", "provider_used": provider.label, "provider_label": provider.label,
+                   "model": model_to_use, "fallback_trail": trail}  # provider_used = label (contrato REST v0.4)
+            return
+        except Exception as exc:  # noqa: BLE001 — o chain classifica QUALQUER falha
+            kind = _kind_of(exc)
+            if committed:
+                # stream morreu no meio: SEM fallback — cliente decide retry
+                trail.append({"provider": provider.label, "kind": kind.value, "message": str(exc)[:200]})
+                yield {
+                    "event": "error",
+                    "error_code": ErrorCode.PROVIDER_STREAM_INTERRUPTED.value
+                    if hasattr(ErrorCode, "PROVIDER_STREAM_INTERRUPTED")
+                    else ErrorCode.PROVIDER_REQUEST_FAILED.value,
+                    "message": f"{provider.label}: conexão interrompida durante a resposta.",
+                    "fallback_trail": trail,
+                    "retryable": True,
+                }
+                return
+            trail.append({"provider": provider.label, "kind": kind.value, "message": str(exc)[:200]})
+            _apply_cooldown(provider_id, kind, getattr(exc, "retry_after", None))
+            yield {"event": "chain", "provider": provider_id, "provider_label": provider.label,
+                   "status": "failed", "kind": kind.value, "message": str(exc)[:200]}
+            continue
+        finally:
+            # abort do cliente (ou erro) propaga o fechamento até o httpx do adapter
+            await stream_iter.aclose()
+
+    yield {
+        "event": "error",
+        "error_code": ErrorCode.ALL_PROVIDERS_FAILED.value,
+        "message": "Todos os provedores da cadeia falharam.",
+        "fallback_trail": trail,
+        "retryable": True,
+    }
+
+
+def _apply_cooldown(provider_id: str, kind, retry_after: int | None) -> None:
+    retry_after = retry_after if retry_after is not None else getattr(kind, "retry_after", None)
+    if kind is ErrorKind.QUOTA_EXHAUSTED:
+        _COOLDOWNS[provider_id] = _now() + (retry_after or _COOLDOWN_QUOTA_DEFAULT)
+    elif kind is ErrorKind.RATE_LIMIT:
+        _COOLDOWNS[provider_id] = _now() + (retry_after or _COOLDOWN_RATE_LIMIT)

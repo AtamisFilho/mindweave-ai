@@ -2,6 +2,28 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.4.5] — 2026-10-02
+
+### Adicionado (épico Experiência de IA — ver docs/design/ai-experience.md)
+
+- **Streaming SSE ponta a ponta (B1)**: `deep-research/stream` e `chat/stream` com eventos `chain/token/done/error`, heartbeat `: ping` a cada 15s, commit-point (fallback só antes do primeiro token; depois `PROVIDER_STREAM_INTERRUPTED` com retry no cliente). Parser SSE incremental no frontend sobrevive a fronteiras de chunk do TCP; buffer de renderização (flush 50ms); linha de status viva da cadeia no painel de Pesquisas — que agora abre junto com a pesquisa. 8/8 adaptadores com `supports_stream` (Gemini via `alt=sse` com parser próprio; Ollama NDJSON; OpenAI-compatible com sentinel `[DONE]` — fim sem sentinel = truncamento).
+- **Chat com o mapa (B2)**: aba Chat com RAG (`context_builder`: outline completo vs retrieval FTS5 bm25 + ancestrais nearest-first), histórico das últimas 10 trocas no prompt, persistência em `meta.chat` (teto de 40) e transparência — cada resposta mostra estratégia/nós incluídos/caracteres do contexto.
+- **Gerar mapa a partir de um tópico (B3)**: `POST /ai/generate` (cadeia + parse JSON robusto + 1 retry de parse no mesmo provedor), modal com profundidade/largura, conversão `treeToGraph`, mapa NOVO não-destrutivo com toast "Voltar ao anterior".
+- **Resumir mapa (B4)**: botão no menu Mapas reusa o chat/stream com pergunta fixa — abre a aba Chat, resposta em streaming, toast "Resumo gerado na aba Chat". Zero endpoints/UI novos.
+- **Expansão em lote (B4)**: selecione até 5 nós (Ctrl+clique) → "Expandir N nós com IA" no último selecionado → `POST /ai/suggest-nodes-batch` (`{map_id, node_ids}`) com `asyncio.gather` em paralelo; falha de um nó não derruba o lote (`error_code` por nó); inserção via o mesmo `addNode` atômico. Sem streaming (REST da v0.4 — evolução futura).
+- **Drag-and-drop na cadeia (B4)**: reordenação por handle ⠿ com @dnd-kit (+15KB gzip, dentro do orçamento de 50KB); botões ▲▼ permanecem como fallback de acessibilidade; persistência segue no "Salvar cadeia".
+
+### Corrigido
+
+- **Dívida do B3**: o commit B3 trouxe só o frontend da geração de mapa — backend (`/ai/generate` + `generation_service`), ação `generateMap` no store, `generateMapApi` e o import do modal no MapsMenu não foram portados (o E2E de geração nunca passou de verdade). Portados e cobertos por testes.
+- **Pesquisa concorrente**: uma nova pesquisa aborta a anterior (AbortController); a suplantada termina em silêncio sem tocar em `streamState`/`aiLoading` — antes, dois streams simultâneos produziam resumo vazio.
+- **E2Es**: `generate.spec` esperava 4 nós/3 arestas (incompatível com o próprio fixture — o `treeToGraph` mantém todos os níveis: 6/5) e não limpava mapas herdados; `stream.spec` clicava o retry por coordenadas (corrida com o toast animando disparava uma 2ª pesquisa).
+
+### Testes
+- Backend: 87 → **121** pytest (parser SSE Gemini, poda do chat, batch com falha isolada, geração com parse adversarial).
+- Frontend: 50 → **66** vitest (orquestração do stream, chat, resumo, lote, seleção múltipla).
+- E2E: 19 → **25** Playwright (stream vivo/interrupção-retry, chat RAG, geração, resumo, lote, dnd da cadeia).
+
 ## [0.4.0] — 2026-09-29
 
 ### Adicionado (épico Provider Chain — ver docs/design/provider-chain.md)

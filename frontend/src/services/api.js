@@ -71,6 +71,13 @@ export const suggestNewNodes = async (suggestionData) => {
   }
 };
 
+// Expansão em lote (v0.4.5 B4): o backend resolve rótulos/ancestrais do
+// documento persistido e expande os nós em paralelo (REST, sem streaming).
+export const suggestNodesBatch = async ({ map_id, node_ids }) => {
+  const response = await apiClient.post('/ai/suggest-nodes-batch', { map_id, node_ids });
+  return response.data;
+};
+
 // --- Maps Endpoints (persistência) ---
 export const listMaps = async () => {
   const response = await apiClient.get('/maps');
@@ -133,4 +140,81 @@ export const getProviderModelsApi = async (provider) => {
   return response.data;
 };
 
+// Geração de mapa a partir de um tópico (v0.4.5 B3) — REST, sem stream
+export const generateMapApi = async (payload) => {
+  const response = await apiClient.post('/ai/generate', payload);
+  return response.data;
+};
+
+
+
+// --- Streaming SSE (v0.4.5) ---
+// Transporte: fetch POST + ReadableStream (EventSource não aceita corpo).
+// Wire format SSE parseado incrementalmente (createSSEParser sobrevive a
+// fronteiras de chunk arbitrárias do TCP).
+
+export const streamDeepResearch = async (payload, { onEvent, signal } = {}) => {
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/ai/deep-research/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    throw { response: { status: 503, data: { detail: { error_code: 'PROVIDER_UNREACHABLE', message: 'Backend inacessível.' } } } };
+  }
+
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    throw { response: { status: response.status, data } };
+  }
+
+  const { createSSEParser } = await import('./sse');
+  const parser = createSSEParser(onEvent);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parser.feed(decoder.decode(value, { stream: true }));
+  }
+  parser.flush();
+};
+
 export default apiClient;
+
+// Chat com o mapa (v0.4.5 B2): mesmo transporte fetch+SSE da pesquisa
+export const streamChat = async (payload, { onEvent, signal } = {}) => {
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/ai/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    throw { response: { status: 503, data: { detail: { error_code: 'PROVIDER_UNREACHABLE', message: 'Backend inacessível.' } } } };
+  }
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    throw { response: { status: response.status, data } };
+  }
+  const { createSSEParser } = await import('./sse');
+  const parser = createSSEParser(onEvent);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parser.feed(decoder.decode(value, { stream: true }));
+  }
+  parser.flush();
+};
+
+
