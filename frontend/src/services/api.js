@@ -146,6 +146,15 @@ export const generateMapApi = async (payload) => {
   return response.data;
 };
 
+// Export Markdown (v0.6.0 B2): blob + filename do Content-Disposition
+// (o backend sanitiza — fonte única do nome do arquivo)
+export const exportMapMarkdown = async (id) => {
+  const response = await apiClient.get(`/maps/${id}/export/markdown`, { responseType: 'blob' });
+  const cd = response.headers?.['content-disposition'] ?? '';
+  const match = /filename="?([^"]+)"?/.exec(cd);
+  return { blob: response.data, filename: match?.[1] ?? 'mapa.md' };
+};
+
 
 
 // --- Streaming SSE (v0.4.5) ---

@@ -53,9 +53,21 @@ Estado atual (v0.4.0): **IA sempre-disponível** — cadeia de 8 provedores com 
 - [x] Posições + estilo persistidos no documento (`meta.layout`); Free-form congela; Undo escopado
 - [x] Escrita de posições sempre via `applyLayoutPositions` (preparado para o undo/redo da v0.2.5)
 
-## v1.0 — Escala
+## v0.6 — Consolidação & Dogfooding — ver [docs/design/v0.6-consolidation.md](docs/design/v0.6-consolidation.md)
 
-- [ ] Export do mapa: PNG, Markdown (outline), OPML
+Primeiro usuário real por 3–4 semanas, com log de fricções (`docs/dogfooding/log.md`).
+Escala só depois: a v1.0 é reavaliada pelo que o uso provar.
+
+- [x] **Undo/redo** do mapa (snapshots estruturais, teto 50; Ctrl+Z/Ctrl+Shift+Z + botões; drag = 1 entrada; a v0.2.5 que nunca aconteceu) — v0.6.0 B1
+- [x] **Export Markdown** (a mesma travessia do contexto do chat; cross-links em todos os ramos; sem teto de profundidade) — v0.6.0 B2
+- [x] **Diário de pesquisas persistido** (`meta.research`, teto 40 — sobrevive ao F5; promovido à v0.6.0 pelo orquestrador) — v0.6.0 B2.5
+- [ ] Export OPML — v0.6.1
+- [ ] **Micro-releases v0.6.x** alimentadas pelo log de fricções (candidatas: Enter=filho/Tab=irmão, Ctrl+F localizar nó, duplicar mapa como checkpoint)
+- [ ] Veredito do dogfooding: o que da v1.0 se confirma, muda ou morre
+
+## v1.0 — Escala (após validação por uso real — v0.6)
+
+- [ ] Export do mapa: PNG (Markdown/OPML antecipados para a v0.6)
 - [ ] Compartilhamento por link (mapas somente leitura)
 - [ ] Multiusuário: Postgres + autenticação (OAuth/e-mail)
 - [ ] Docker Compose (frontend + backend + Ollama opcional)

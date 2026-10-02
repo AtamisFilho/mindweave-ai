@@ -23,12 +23,17 @@ function App() {
     darkMode,
     toggleDarkMode,
     aiLoading,
+    undoDepth, redoDepth, lastUndoLabel, lastRedoLabel,
   } = useMindMapStore(useShallow((state) => ({
     activePanel: state.activePanel,
     setActivePanel: state.setActivePanel,
     darkMode: state.darkMode,
     toggleDarkMode: state.toggleDarkMode,
     aiLoading: state.aiLoading,
+    undoDepth: state.undoStack.length,
+    redoDepth: state.redoStack.length,
+    lastUndoLabel: state.undoStack.at(-1)?.label ?? null,
+    lastRedoLabel: state.redoStack.at(-1)?.label ?? null,
   })));
 
   // Fricção Zero: carrega o último mapa (ou cria um novo) — sem tela de lista
@@ -43,6 +48,24 @@ function App() {
         e.preventDefault();
         useMindMapStore.getState().saveNow({ manual: true });
       }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Undo/redo do mapa (v0.6.0): Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. Guarda: com o
+  // foco em campo de texto, o undo é o NATIVO do campo — nunca desfaz grafo.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'z' && k !== 'y') return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      const st = useMindMapStore.getState();
+      if (k === 'y' || e.shiftKey) st.redo();
+      else st.undo();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -98,6 +121,26 @@ function App() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <AIStatusBadge />
+          <Button
+            onClick={() => useMindMapStore.getState().undo()}
+            disabled={undoDepth === 0}
+            variant="ghost"
+            className="text-sm px-2! py-1!"
+            title={lastUndoLabel ? `Desfazer: ${lastUndoLabel}` : 'Nada para desfazer'}
+            aria-label="Desfazer"
+          >
+            ↩
+          </Button>
+          <Button
+            onClick={() => useMindMapStore.getState().redo()}
+            disabled={redoDepth === 0}
+            variant="ghost"
+            className="text-sm px-2! py-1!"
+            title={lastRedoLabel ? `Refazer: ${lastRedoLabel}` : 'Nada para refazer'}
+            aria-label="Refazer"
+          >
+            ↪
+          </Button>
           <SaveIndicator />
           <MapsMenu />
           <Button onClick={toggleDarkMode} variant="ghost" className="text-sm px-2! py-1!">
@@ -145,6 +188,7 @@ function App() {
                 <h3 className="text-md font-semibold mb-2 text-gray-700 dark:text-gray-200">Instruções</h3>
                 <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400 space-y-1">
                     <li>Clique duplo no nó para editar texto.</li>
+                    <li>Com o editor aberto: Enter cria um filho, Tab cria um irmão (na raiz, outra raiz) — o novo nó já abre em edição.</li>
                     <li>Selecione um nó para ver ações de IA.</li>
                     <li>Use 'Delete' ou 'Backspace' para remover nós.</li>
                     <li>Arraste de um círculo em um nó para outro para conectar.</li>

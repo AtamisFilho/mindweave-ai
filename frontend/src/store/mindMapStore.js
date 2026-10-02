@@ -25,6 +25,15 @@ import { nanoid } from 'nanoid';
 import { computeLayout } from '../layout/engine';
 
 const CHAT_HISTORY_LIMIT = 40; // teto de mensagens persistidas em meta.chat
+const RESEARCH_HISTORY_LIMIT = 40; // teto de pesquisas persistidas em meta.research (v0.6.0 B2.5)
+const RESEARCH_SUMMARY_LIMIT = 4000; // teto por resumo (bounda o blob do documento)
+
+// Undo/redo (v0.6.0): snapshots por referência {nodes, edges, layoutMeta}.
+// Teto de 50 entradas; a decisão de empilhar é por TIPO DE AÇÃO (ver doc
+// design/v0.6-consolidation.md) — nunca pela structuralSignature, que é
+// exclusiva do gatilho do auto-layout.
+const MAX_UNDO_ENTRIES = 50;
+let dragUndoArmed = false; // drag em curso já tem entrada (coalescing)
 
 // Pergunta fixa do "Resumir mapa" (v0.4.5 B4): reusa o /ai/chat/stream —
 // nenhuma superfície nova de UI ou endpoint; a resposta nasce na aba Chat.
@@ -151,9 +160,79 @@ const useMindMapStore = create((set, get) => ({
   layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
   autoLayout: false,         // relayout pós-mudança estrutural (B4)
 
+  // --- Undo/redo (v0.6.0) ---
+  undoStack: [],             // [{nodes, edges, layoutMeta, label}] — mais recente no fim
+  redoStack: [],
+
+  // PONTO ÚNICO DE ENTRADA das ações semânticas: chamar ANTES do set que
+  // muta o grafo, e somente quando a mutação vai de fato acontecer.
+  pushUndo: (label) => {
+    const s = get();
+    const entry = { nodes: s.nodes, edges: s.edges, layoutMeta: s.layoutMeta, label };
+    set((st) => ({
+      undoStack: [...st.undoStack.slice(-(MAX_UNDO_ENTRIES - 1)), entry],
+      redoStack: [], // nova ação zera o redo
+    }));
+  },
+
+  undo: () => {
+    const s = get();
+    if (s.undoStack.length === 0) return;
+    const entry = s.undoStack[s.undoStack.length - 1];
+    // o rótulo VIAJA com a entrada: alimenta o tooltip do redo e volta para
+    // o undo quando o redo for desfeito
+    const current = { nodes: s.nodes, edges: s.edges, layoutMeta: s.layoutMeta, label: entry.label };
+    // isNew é flag transiente do editor: o restore não pode reabrir o editor
+    const nodes = entry.nodes.map((n) =>
+      n.data?.isNew ? { ...n, data: { ...n.data, isNew: false } } : n
+    );
+    set({
+      undoStack: s.undoStack.slice(0, -1),
+      redoStack: [...s.redoStack, current],
+      nodes,
+      edges: entry.edges,
+      layoutMeta: entry.layoutMeta,
+    });
+  },
+
+  redo: () => {
+    const s = get();
+    if (s.redoStack.length === 0) return;
+    const entry = s.redoStack[s.redoStack.length - 1];
+    const current = { nodes: s.nodes, edges: s.edges, layoutMeta: s.layoutMeta, label: entry.label };
+    const nodes = entry.nodes.map((n) =>
+      n.data?.isNew ? { ...n, data: { ...n.data, isNew: false } } : n
+    );
+    set({
+      redoStack: s.redoStack.slice(0, -1),
+      undoStack: [...s.undoStack, current],
+      nodes,
+      edges: entry.edges,
+      layoutMeta: entry.layoutMeta,
+    });
+  },
+
+  // Trocar/criar/carregar mapa limpa os dois stacks — snapshot de um mapa
+  // jamais restaura sobre outro.
+  clearUndoHistory: () => set({ undoStack: [], redoStack: [] }),
+
 
   // --- React Flow specific actions ---
-  onNodesChange: (changes) =>
+  onNodesChange: (changes) => {
+    // Undo por tipo de change: remove empilha; drag empilha 1× (armado no
+    // primeiro evento, encerrado no dragging:false); seleção/dimensions nada.
+    const hasRemove = changes.some((c) => c.type === 'remove');
+    const hasPosition = changes.some((c) => c.type === 'position');
+    const isDragging = changes.some((c) => c.type === 'position' && c.dragging);
+    if (hasRemove) {
+      get().pushUndo('excluir nós');
+    } else if (hasPosition) {
+      if (isDragging && !dragUndoArmed) { get().pushUndo('mover nós'); dragUndoArmed = true; }
+      else if (!isDragging && !dragUndoArmed) get().pushUndo('mover nós');
+    } else {
+      dragUndoArmed = false; // lote sem posição encerra drag pendente
+    }
+
     set((state) => {
       const nodes = applyNodeChanges(changes, state.nodes);
       const removedIds = changes.filter(c => c.type === 'remove').map(c => c.id);
@@ -169,11 +248,15 @@ const useMindMapStore = create((set, get) => ({
         ),
         edges: state.edges.filter(e => !removed.has(e.source) && !removed.has(e.target)),
       };
-    }),
-  onEdgesChange: (changes) =>
+    });
+    if (hasPosition && !isDragging) dragUndoArmed = false; // fim do drag
+  },
+  onEdgesChange: (changes) => {
+    if (changes.some((c) => c.type === 'remove')) get().pushUndo('excluir conexões');
     set((state) => ({
       edges: applyEdgeChanges(changes, state.edges),
-    })),
+    }));
+  },
   // Conexão manual (drag entre handles): valida raiz/duplicata/ciclo e grava
   // aresta + cache de posicionamento atomicamente. Cross-links são permitidos (DAG).
   // O tipo da aresta segue o preset visual ativo (curved/direct/cornered).
@@ -186,6 +269,7 @@ const useMindMapStore = create((set, get) => ({
     if (state.edges.some(e => e.source === source && e.target === target)) return false;
     if (wouldCreateCycle(state.edges, source, target)) return false;
     const edgeType = state.layoutMeta?.edgeType ?? undefined;
+    get().pushUndo('conectar nós'); // validações passaram: a mutação vem
     set((s) => ({
       edges: rfAddEdge({ ...params, type: edgeType, animated: true, style: { strokeWidth: 2 } }, s.edges),
       nodes: s.nodes.map(n => (n.id === target ? { ...n, data: { ...n.data, parentId: source } } : n)),
@@ -194,7 +278,8 @@ const useMindMapStore = create((set, get) => ({
   },
 
   // --- Node manipulation actions ---
-  addNode: (parentNodeId = null, position, initialData = {}) => {
+  addNode: (parentNodeId = null, position, initialData = {}, { skipUndo = false } = {}) => {
+    if (!skipUndo) get().pushUndo('adicionar nó');
     const newNodeId = nanoid(6);
     let newNodePosition;
 
@@ -245,14 +330,32 @@ const useMindMapStore = create((set, get) => ({
     return newNodeId; // Return the new node's ID
   },
 
-  updateNodeLabel: (nodeId, label) =>
+  // Irmão via Tab (v0.6.0 B3): nasce após os irmãos existentes (o
+  // posicionamento do addNode já faz y = pai + count*130). Irmão de raiz
+  // é outra raiz — coerente com o botão "Adicionar Nó Raiz".
+  // Com Auto ON, a mudança estrutural dispara o relayout (como toda ação).
+  addSiblingNode: (nodeId) => {
+    const node = get().nodes.find((n) => n.id === nodeId);
+    if (!node) return null;
+    if (node.data.isRoot) {
+      return get().addNode(null, { x: node.position.x + 50, y: node.position.y + 130 }, { label: 'Novo Raiz' });
+    }
+    return get().addNode(node.data.parentId, undefined, { label: 'Novo Nó' });
+  },
+
+  updateNodeLabel: (nodeId, label) => {
+    // Empilha só quando o rótulo muda de fato; limpar isNew sozinho é estado
+    // transiente de edição, não é história do grafo.
+    const node = get().nodes.find((n) => n.id === nodeId);
+    if (node && node.data.label !== label) get().pushUndo('renomear nó');
     set((state) => ({
       nodes: state.nodes.map((node) =>
         node.id === nodeId
           ? { ...node, data: { ...node.data, label, isNew: false } } // Clear isNew after first edit
           : node
       ),
-    })),
+    }));
+  },
   
   // --- AI Configuration actions ---
   fetchAIConfig: async () => {
@@ -366,7 +469,9 @@ const useMindMapStore = create((set, get) => ({
       const entry = {
         id: `${Date.now()}-${researchData.nodeId}`,
         nodeId: researchData.nodeId,
-        summary,
+        // teto por entrada: o diário persiste em meta.research — um resumo
+        // gigante não pode inflar o blob do documento sem bound
+        summary: summary.slice(0, RESEARCH_SUMMARY_LIMIT),
         createdAt: Date.now(),
       };
       set((s) => ({
@@ -426,9 +531,10 @@ const useMindMapStore = create((set, get) => ({
     try {
       const result = await apiSuggestNewNodes(suggestionData); // from api.js
       if (result.suggestedNodes && result.suggestedNodes.length > 0) {
+        get().pushUndo('sugestões de IA'); // 1 entrada para o lote inteiro
         result.suggestedNodes.forEach((suggestion) => {
           // Use addNode to create and position the new suggested nodes
-          get().addNode(nodeId, undefined, { label: suggestion.content });
+          get().addNode(nodeId, undefined, { label: suggestion.content }, { skipUndo: true });
         });
         toast.success(`${result.suggestedNodes.length} nós sugeridos`, {
           description: `Adicionados como filhos (via ${result.provider_used ?? 'IA'}).`,
@@ -464,10 +570,12 @@ const useMindMapStore = create((set, get) => ({
       const result = await apiSuggestNodesBatch({ map_id: mapId, node_ids: ids });
       let added = 0;
       const failures = [];
+      const willAdd = (result.results ?? []).some((r) => (r.suggestedNodes ?? []).length > 0);
+      if (willAdd) get().pushUndo('sugestões de IA'); // 1 entrada para o lote todo
       for (const r of result.results ?? []) {
         if (r.error_code) { failures.push(r); continue; }
         for (const suggestion of r.suggestedNodes ?? []) {
-          get().addNode(r.node_id, undefined, { label: suggestion.content });
+          get().addNode(r.node_id, undefined, { label: suggestion.content }, { skipUndo: true });
           added += 1;
         }
         if (r.provider_used) set({ lastProviderUsed: r.provider_used });
@@ -508,8 +616,11 @@ const useMindMapStore = create((set, get) => ({
       saveState: 'saved',
       layoutMeta: map.document.meta?.layout ?? { schema: 'balanced-lr', edgeType: null, compact: false },
       chat: map.document.meta?.chat ?? [],
-      researchHistory: [],
+      // diário intelectual: hidrata do documento (B2.5) — morria no F5
+      researchHistory: map.document.meta?.research ?? [],
       researchPanelNodeId: null,
+      undoStack: [], // mapa novo: undo/redo de sessão não atravessa mapas
+      redoStack: [],
     }),
 
   _documentFromState: () => {
@@ -521,6 +632,8 @@ const useMindMapStore = create((set, get) => ({
         layout: s.layoutMeta,
         // teto do histórico: as 40 últimas trocas (~32KB) persistem
         chat: s.chat.slice(-CHAT_HISTORY_LIMIT),
+        // diário de pesquisas (B2.5): 40 entradas, resumo já podado na criação
+        research: s.researchHistory.slice(-RESEARCH_HISTORY_LIMIT),
       },
     };
   },
@@ -583,6 +696,8 @@ const useMindMapStore = create((set, get) => ({
         saveState: 'offline',
         researchHistory: [],
         researchPanelNodeId: null,
+        undoStack: [],
+        redoStack: [],
       });
       writePending({ mapId: null, title: 'Mapa sem título', document, expected_version: null });
       set({ pendingLocal: true });
@@ -626,6 +741,7 @@ const useMindMapStore = create((set, get) => ({
         clearPending();
       }
       if (manual) toast.success('Mapa salvo');
+      return true;
     } catch (error) {
       if (error?.response?.status === 409) {
         // Outra aba salvou: nunca sobrescreve calado — oferece recarregar
@@ -648,6 +764,7 @@ const useMindMapStore = create((set, get) => ({
         set({ saveState: 'offline', pendingLocal: true });
         if (manual) toast.error('Sem conexão — alterações salvas localmente');
       }
+      return false; // offline: quem chamou decide (export avisa e segue)
     }
   },
 
@@ -741,9 +858,11 @@ const useMindMapStore = create((set, get) => ({
 
   // --- Layout automático (v0.5) ---
   // ÚNICO caminho para escritas de posição em massa (Diretriz d do Tech Lead):
-  // snapshot antes + aplicação atômica -> o futuro undo/redo (v0.2.5) captura
-  // a aplicação do layout como UM comando, e o autosave enxerga um único lote.
-  applyLayoutPositions: (positionsById) => {
+  // snapshot antes + aplicação atômica -> o undo (v0.6.0) captura a aplicação
+  // do layout como UM comando. relayoutAuto (toggle Auto) passa skipUndo: o
+  // relayout é absorvido pela entrada da ação que o disparou.
+  applyLayoutPositions: (positionsById, { skipUndo = false } = {}) => {
+    if (!skipUndo) get().pushUndo('organizar layout');
     const previous = Object.fromEntries(
       get().nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
     );
@@ -758,6 +877,7 @@ const useMindMapStore = create((set, get) => ({
   },
 
   restorePositions: (previousPositionsById) => {
+    get().pushUndo('desfazer layout'); // o undo do toast também é história
     set((state) => ({
       nodes: state.nodes.map((n) =>
         previousPositionsById[n.id]
@@ -769,23 +889,27 @@ const useMindMapStore = create((set, get) => ({
 
   // Preset visual (v0.5 B3): estilo de aresta + densidade — afeta TODO o mapa
   // e as arestas criadas daqui em diante. Posições só mudam no ⚡ Auto-organizar.
-  setVisualPreset: ({ edgeType, compact }) =>
+  setVisualPreset: ({ edgeType, compact }) => {
+    get().pushUndo('mudar estilo visual'); // arestas + layoutMeta voltam juntos
     set((s) => ({
       layoutMeta: { ...s.layoutMeta, edgeType: edgeType ?? null, compact: !!compact },
       edges: s.edges.map((e) => ({ ...e, type: edgeType ?? undefined })),
-    })),
+    }));
+  },
 
   setLayoutSchema: (schema) =>
     set((s) => ({ layoutMeta: { ...s.layoutMeta, schema } })),
 
   setAutoLayout: (autoLayout) => set({ autoLayout: !!autoLayout }),
 
-  // B4: relayout silencioso pós-mudança estrutural (chamado pelo subscribe)
+  // B4: relayout silencioso pós-mudança estrutural (chamado pelo subscribe).
+  // skipUndo: o relayout é ABSORVIDO pela entrada da ação que o disparou —
+  // o undo dela volta ANTES do relayout inteiro (ver design v0.6.0).
   relayoutAuto: () => {
     const s = get();
     if (!s.autoLayout || s.hydrating || s.nodes.length === 0) return;
     const positions = computeLayout(s.nodes, s.edges, { schema: s.layoutMeta.schema });
-    s.applyLayoutPositions(positions);
+    s.applyLayoutPositions(positions, { skipUndo: true });
   },
 
   // --- Chat com o mapa (v0.4.5 B2) ---
@@ -901,9 +1025,14 @@ const useMindMapStore = create((set, get) => ({
         currentMapId: created.id,
         mapVersion: created.version,
         layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
-        chat: [], researchHistory: [], researchPanelNodeId: null,
+        // mapa NOVO nasce vazio, mas hidrata do documento criado (mesma
+        // regra do _applyServerMap — B2.5: nada de zerar calado)
+        chat: created.document?.meta?.chat ?? [],
+        researchHistory: created.document?.meta?.research ?? [],
+        researchPanelNodeId: null,
         aiLoading: false, generatingMap: false,
         lastProviderUsed: result.provider_used ?? null,
+        undoStack: [], redoStack: [], // mapa NOVO: história de sessão não atravessa
       });
       toast.success(`Mapa "${created.title}" gerado`, {
         description: `${graph.count} nós · via ${result.provider_used}.`,
@@ -984,7 +1113,8 @@ useMindMapStore.subscribe((state, prev) => {
     state.nodes !== prev.nodes ||
     state.edges !== prev.edges ||
     state.mapTitle !== prev.mapTitle ||
-    state.chat !== prev.chat
+    state.chat !== prev.chat ||
+    state.researchHistory !== prev.researchHistory // B2.5: done de pesquisa dispara o save sem tocar no grafo
   ) {
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
