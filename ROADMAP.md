@@ -61,8 +61,9 @@ Escala só depois: a v1.0 é reavaliada pelo que o uso provar.
 - [x] **Undo/redo** do mapa (snapshots estruturais, teto 50; Ctrl+Z/Ctrl+Shift+Z + botões; drag = 1 entrada; a v0.2.5 que nunca aconteceu) — v0.6.0 B1
 - [x] **Export Markdown** (a mesma travessia do contexto do chat; cross-links em todos os ramos; sem teto de profundidade) — v0.6.0 B2
 - [x] **Diário de pesquisas persistido** (`meta.research`, teto 40 — sobrevive ao F5; promovido à v0.6.0 pelo orquestrador) — v0.6.0 B2.5
+- [x] **Enter/Tab — continuidade de edição** (filho/irmão com corrente de foco; Tab na raiz = outra raiz; portão disparou: B1+B2+B2.5 fecharam sem drift) — v0.6.0 B3
 - [ ] Export OPML — v0.6.1
-- [ ] **Micro-releases v0.6.x** alimentadas pelo log de fricções (candidatas: Enter=filho/Tab=irmão, Ctrl+F localizar nó, duplicar mapa como checkpoint)
+- [ ] **Micro-releases v0.6.x** alimentadas pelo log de fricções (candidatas remanescentes: Ctrl+F localizar nó, duplicar mapa como checkpoint)
 - [ ] Veredito do dogfooding: o que da v1.0 se confirma, muda ou morre
 
 ## v1.0 — Escala (após validação por uso real — v0.6)
