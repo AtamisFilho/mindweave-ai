@@ -16,7 +16,8 @@ class GeminiNativeProvider(AIProviderBase):
     daily_quota_markers = DAILY_MARKERS
     supports_stream = True
 
-    async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
+    async def complete(self, prompt: str, model: str, api_key: str | None = None,
+                       base_url: str | None = None) -> str:  # noqa: ARG002 — base_url só p/ OpenAI-compatible
         if not api_key:
             raise ProviderCallError(self.id, ErrorKind.UNKNOWN, "api_key ausente")
 
@@ -58,7 +59,8 @@ class GeminiNativeProvider(AIProviderBase):
             "O Gemini retornou uma resposta em formato inesperado.", status_code=502,
         )
 
-    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None):
+    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None,
+                              base_url: str | None = None):  # noqa: ARG002
         """Streaming alt=sse do Gemini (v0.4.5).
 
         Parser próprio (_GeminiSSEParser): o formato difere do OpenAI —

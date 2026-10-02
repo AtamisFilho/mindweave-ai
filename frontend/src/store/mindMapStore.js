@@ -15,9 +15,11 @@ import {
   saveMapApi,
   deleteMapApi,
   getChain,
+  saveChain,
   streamDeepResearch,
   streamChat,
   generateMapApi,
+  listProviderModels,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
@@ -141,6 +143,8 @@ const useMindMapStore = create((set, get) => ({
   selectedCount: 0,         // nº de nós selecionados (botão de expansão em lote)
   generatingMap: false,     // geração de mapa a partir de tópico (v0.4.5 B3)
   generateError: null,
+  localStatus: { lmstudio: null, ollama: null }, // probe do onboarding (v0.6.1)
+  localModels: { lmstudio: [], ollama: [] },
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -377,6 +381,41 @@ const useMindMapStore = create((set, get) => ({
   },
 
   setChainConfig: (chain) => set({ chainConfig: chain }),
+
+  // --- Onboarding de provedores locais (v0.6.1) ---
+  // Probe = listagem de modelos: 200 = servidor no ar; erro = fora.
+  probeLocalServers: async () => {
+    const results = await Promise.all(['lmstudio', 'ollama'].map(async (p) => {
+      try {
+        const r = await listProviderModels(p);
+        return { p, status: 'up', models: r.models ?? [] };
+      } catch {
+        return { p, status: 'down', models: [] };
+      }
+    }));
+    set({
+      localStatus: Object.fromEntries(results.map(({ p, status }) => [p, status])),
+      localModels: Object.fromEntries(results.map(({ p, models }) => [p, models])),
+    });
+  },
+
+  // Persiste UM campo de UM provedor na cadeia (modelo selecionado, base_url
+  // do cartão) — PUT /ai/chain preservando o resto.
+  persistChainEntry: async (provider, patch) => {
+    const entries = get().chainConfig.map((e) => (
+      e.provider === provider ? { ...e, ...patch } : e
+    ));
+    try {
+      const saved = await saveChain(entries.map(({ provider: p, enabled, model, base_url }) => (
+        { provider: p, enabled, model, base_url: base_url ?? undefined }
+      )));
+      set({ chainConfig: saved });
+      return true;
+    } catch {
+      toast.error('Não foi possível salvar a configuração do provedor.');
+      return false;
+    }
+  },
 
   updateAIConfig: async (newConfig) => {
     set({ aiLoading: true, aiError: null, aiErrorCode: null });

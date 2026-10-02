@@ -17,7 +17,8 @@ class OllamaNativeProvider(AIProviderBase):
     local = True
     supports_stream = True
 
-    async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
+    async def complete(self, prompt: str, model: str, api_key: str | None = None,
+                       base_url: str | None = None) -> str:  # noqa: ARG002 — base_url só p/ OpenAI-compatible
         payload = {"model": model, "prompt": prompt, "stream": False}
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
@@ -45,7 +46,8 @@ class OllamaNativeProvider(AIProviderBase):
             )
         return response.json().get("response", "").strip()
 
-    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None):
+    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None,
+                              base_url: str | None = None):  # noqa: ARG002
         """Streaming NDJSON nativo do Ollama: cada linha {response: "..."}.
 
         O fim legítimo é a linha {"done": true}; fim sem ela = truncamento.

@@ -39,7 +39,7 @@ test('happy path: LM Studio responde → provider_used com trilha vazia', async 
 
   expect(status).toBe(200);
   expect(body.provider_used).toContain('LM Studio');
-  expect(body.researchSummary).toBe('resposta mock do lm studio');
+  expect(body.researchSummary).toContain('resposta mock do lm studio'); // v0.6.1: mock ecoa [model=...]
   expect(body.fallback_trail).toEqual([]);
 });
 

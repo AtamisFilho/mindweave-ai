@@ -4,6 +4,7 @@ import useMindMapStore from '../../store/mindMapStore';
 import { extractApiError } from '../../services/api';
 import Button from '../UI/Button';
 import Input from '../UI/Input';
+import LocalServerCard from './LocalServerCard';
 
 const AISettingsPanel = () => {
   const {
@@ -13,6 +14,8 @@ const AISettingsPanel = () => {
     aiLoading,
     configFocusKey,
     clearConfigFocusKey,
+    probeLocalServers,
+    localStatus,
   } = useMindMapStore(useShallow((state) => ({
     aiConfig: state.aiConfig,
     fetchAIConfig: state.fetchAIConfig,
@@ -20,6 +23,8 @@ const AISettingsPanel = () => {
     aiLoading: state.aiLoading,
     configFocusKey: state.configFocusKey,
     clearConfigFocusKey: state.clearConfigFocusKey,
+    probeLocalServers: state.probeLocalServers,
+    localStatus: state.localStatus,
   })));
 
   const openaiInputRef = useRef(null);
@@ -38,6 +43,17 @@ const AISettingsPanel = () => {
   useEffect(() => {
     fetchAIConfig(); // Fetch initial config when component mounts
   }, [fetchAIConfig]);
+
+  // Probe dos servidores locais ao abrir a aba (onboarding v0.6.1)
+  useEffect(() => {
+    probeLocalServers();
+  }, [probeLocalServers]);
+
+  // Helper de primeira execução: nenhum local no ar e nenhuma chave de nuvem
+  const firstRunHelp = (
+    localStatus.lmstudio === 'down' && localStatus.ollama === 'down'
+    && !aiConfig?.isOpenAiKeySet && !aiConfig?.isGoogleKeySet
+  );
 
   useEffect(() => {
     // Update local state when store's aiConfig changes (e.g., after fetch or external update)
@@ -118,6 +134,29 @@ const AISettingsPanel = () => {
           {statusMessage}
         </p>
       )}
+      {firstRunHelp && (
+        <div className="p-3 border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-md mb-4 space-y-2">
+          <h4 className="text-md font-semibold text-blue-800 dark:text-blue-200">
+            Como ativar a IA em 2 minutos
+          </h4>
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            Você não precisa de chave de nuvem para começar — qualquer UM dos dois abaixo basta:
+          </p>
+          <div className="grid grid-cols-1 gap-2 text-xs">
+            <div className="bg-white dark:bg-gray-800 rounded p-2">
+              <p className="font-semibold text-gray-700 dark:text-gray-200 mb-1">Opção A — LM Studio</p>
+              <p className="text-gray-600 dark:text-gray-300">Abra o LM Studio ▸ aba Developer ▸ <strong>Start Server</strong>. Depois clique em “Verificar de novo” no cartão abaixo.</p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded p-2">
+              <p className="font-semibold text-gray-700 dark:text-gray-200 mb-1">Opção B — Ollama</p>
+              <p className="text-gray-600 dark:text-gray-300">No terminal: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">ollama serve</code> e deixe a janela aberta. Depois clique em “Verificar de novo”.</p>
+            </div>
+          </div>
+          <Button onClick={() => probeLocalServers()} variant="outline" className="text-xs py-1 px-2">
+            Verificar de novo
+          </Button>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-5">
 
         <div className="p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 space-y-3">
@@ -148,6 +187,8 @@ const AISettingsPanel = () => {
             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Certifique-se que o modelo foi baixado: `ollama pull nome_do_modelo`.</p>
           </div>
         </div>
+
+        <LocalServerCard provider="lmstudio" />
 
         <div className={`p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 ${fieldHighlight('openai')}`}>
           <h4 className="text-md font-semibold text-gray-700 dark:text-gray-200">OpenAI</h4>

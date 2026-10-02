@@ -114,6 +114,7 @@ async def execute_chain(
 
     trail: list[dict] = []
     last_error: Exception | None = None
+    chain_cfg = {c["provider"]: c for c in chain_config_service.get_chain_config()}
 
     for provider_id in chain:
         provider = PROVIDERS[provider_id]
@@ -126,11 +127,13 @@ async def execute_chain(
             })
             continue
 
-        model_to_use = model if (model and provider_id == preferred) else provider.default_model
+        cfg = chain_cfg.get(provider_id, {})
+        model_to_use = model if (model and provider_id == preferred) else (cfg.get("model") or provider.default_model)
+        base_url_override = cfg.get("base_url") or None
         api_key = keys_service.get_key(provider_id) if provider.requires_key else None
 
         try:
-            content = await provider.complete(prompt, model_to_use, api_key)
+            content = await provider.complete(prompt, model_to_use, api_key, base_url=base_url_override)
             return {
                 "content": content,
                 "provider": provider_id,
@@ -205,6 +208,7 @@ async def execute_chain_stream(
         return
 
     trail: list[dict] = []
+    chain_cfg = {c["provider"]: c for c in chain_config_service.get_chain_config()}
 
     for provider_id in chain:
         provider = PROVIDERS[provider_id]
@@ -226,7 +230,9 @@ async def execute_chain_stream(
             }
             continue
 
-        model_to_use = model if (model and provider_id == preferred) else provider.default_model
+        cfg = chain_cfg.get(provider_id, {})
+        model_to_use = model if (model and provider_id == preferred) else (cfg.get("model") or provider.default_model)
+        base_url_override = cfg.get("base_url") or None
         api_key = keys_service.get_key(provider_id) if provider.requires_key else None
 
         yield {
@@ -240,7 +246,7 @@ async def execute_chain_stream(
         if not provider.supports_stream:
             started = time.perf_counter()
             try:
-                content = await provider.complete(prompt, model_to_use, api_key)
+                content = await provider.complete(prompt, model_to_use, api_key, base_url=base_url_override)
             except Exception as exc:  # noqa: BLE001
                 kind = _kind_of(exc)
                 trail.append({"provider": provider.label, "kind": kind.value, "message": str(exc)[:200]})
@@ -259,7 +265,7 @@ async def execute_chain_stream(
         # Caminho streaming — o stream_iter é criado antes do try e o finally
         # cobre TODO o trecho com upstream aberto: abort do cliente (ou erro)
         # propaga o fechamento até o httpx do adapter.
-        stream_iter = provider.complete_stream(prompt, model_to_use, api_key)
+        stream_iter = provider.complete_stream(prompt, model_to_use, api_key, base_url=base_url_override)
         started = time.perf_counter()
         committed = False
         try:

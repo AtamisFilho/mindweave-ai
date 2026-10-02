@@ -57,5 +57,8 @@ class ProviderChainRow(Base):
 
     provider: Mapped[str] = mapped_column(String, primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # base_url por provedor (v0.6.1): porta/URL do servidor local (LM Studio),
+    # None = usa o default do adapter
+    base_url: Mapped[str | None] = mapped_column(String, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     model: Mapped[str | None] = mapped_column(String, nullable=True)

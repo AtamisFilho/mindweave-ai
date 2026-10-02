@@ -42,10 +42,12 @@ class AIProviderBase(ABC):
     supports_stream: bool = False  # v0.4.5: complete_stream implementado?
 
     @abstractmethod
-    async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
+    async def complete(self, prompt: str, model: str, api_key: str | None = None,
+                       base_url: str | None = None) -> str:
         """Executa a geração e devolve o texto completo."""
 
-    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None) -> AsyncIterator[str]:
+    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None,
+                              base_url: str | None = None) -> AsyncIterator[str]:
         """Streaming de tokens. Adapters com supports_stream=False usam complete()."""
         raise NotImplementedError(f"{self.id}: streaming não implementado")
         yield ""  # pragma: no cover — torna a função geradora async

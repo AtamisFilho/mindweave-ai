@@ -28,8 +28,8 @@ from app.models.ai_models import (
     NodeContext,
     OllamaConfig,
 )
-from app.providers import get_provider
-from app.services import chain_executor, context_builder, keys_service
+from app.providers import PROVIDERS, get_provider
+from app.services import chain_config_service, chain_executor, context_builder, keys_service
 from app.services.ai_service import (
     build_research_prompt,
     build_suggest_prompt,
@@ -385,6 +385,40 @@ async def suggest_nodes_batch(request: AISuggestNodesBatchRequest = Body(...)):
 
     results = await asyncio.gather(*(_expand(nid) for nid in node_ids))
     return AISuggestNodesBatchResponse(results=list(results))
+
+
+
+
+@router.get("/models/{provider}")
+async def list_models(provider: str):
+    """Lista modelos de provedores locais (v0.6.1 — antes disto esta rota
+    vivia sob /ai/chain/models e o frontend chamava /ai/models: 404 desde
+    sempre; o caminho do LM Studio também montava /v1/v1). Honra o
+    base_url configurado na cadeia."""
+    import httpx
+
+    if provider not in PROVIDERS or not PROVIDERS[provider].local:
+        raise HTTPException(status_code=400, detail={
+            "error_code": "LOCAL_ONLY",
+            "message": "Listagem de modelos disponível apenas para provedores locais.",
+        })
+    provider_obj = PROVIDERS[provider]
+    cfg = {c["provider"]: c for c in chain_config_service.get_chain_config()}
+    base = (cfg.get(provider, {}).get("base_url")) or provider_obj.base_url
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+            if provider == "ollama":
+                resp = await client.get(f"{base.rstrip('/')}/api/tags")
+                models = [m.get("name") for m in resp.json().get("models", []) if m.get("name")]
+            else:  # lm studio (OpenAI-compatible) — base JÁ inclui /v1
+                resp = await client.get(f"{base.rstrip('/')}/models")
+                models = [m.get("id") for m in resp.json().get("data", []) if m.get("id")]
+        return {"provider": provider, "models": models, "base_url": base}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail={
+            "error_code": "PROVIDER_UNREACHABLE",
+            "message": f"Não foi possível listar modelos de {provider} (servidor local fora do ar?).",
+        }) from exc
 
 
 @router.get("/config", response_model=AIProviderConfigResponse)

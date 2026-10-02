@@ -42,6 +42,7 @@ def get_chain_config() -> list[dict]:
                 "enabled": row.enabled,
                 "order": row.sort_order,
                 "model": row.model,
+                "base_url": row.base_url,
             }
             for row in rows
         ]
@@ -75,6 +76,10 @@ def save_chain_config(entries: list[dict]) -> list[dict]:
         })
 
     with SessionLocal() as session:
+        # save REPLICA as linhas: preserva base_url quando a entrada não traz
+        # (o save da UI envia {provider, enabled, model}; o cartão local envia
+        # base_url — um não pode apagar o outro)
+        previous = {r.provider: r.base_url for r in session.query(ProviderChainRow).all()}
         session.query(ProviderChainRow).delete()
         for idx, entry in enumerate(entries):
             session.add(ProviderChainRow(
@@ -82,6 +87,7 @@ def save_chain_config(entries: list[dict]) -> list[dict]:
                 enabled=bool(entry.get("enabled", True)),
                 sort_order=idx,
                 model=entry.get("model"),
+                base_url=entry.get("base_url") or previous.get(entry["provider"]),
             ))
         session.commit()
     return get_chain_config()

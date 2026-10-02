@@ -25,10 +25,18 @@ STATE = {"mode": sys.argv[2]}
 class Handler(BaseHTTPRequestHandler):
     def _handle(self):
         length = int(self.headers.get("Content-Length", 0) or 0)
+        payload = {}
         if length:
-            self.rfile.read(length)
+            raw = self.rfile.read(length)
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                payload = {}
+        if payload.get("model"):
+            STATE["last_model"] = payload["model"]  # eco: prova fios no E2E
 
         path = self.path.split("?")[0]
+
         if path == "/control":
             from urllib.parse import parse_qs, urlparse
             qs = parse_qs(urlparse(self.path).query)
@@ -46,6 +54,36 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
 
+        # listagem de modelos locais (v0.6.1): probe do onboarding
+        if path.endswith("/models") and PORT == 1234:
+            body = json.dumps({"data": [{"id": "qwen2.5-7b-instruct"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path.endswith("/api/tags") and PORT == 11434:
+            body = json.dumps({"models": [{"name": "llama3"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/control":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            STATE["mode"] = qs.get("mode", [STATE["mode"]])[0]
+            body = b'{"mode": "' + STATE["mode"].encode() + b'"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+
         # --- modos de stream (v0.4.5): corpo progressivo + sentinel ---
         # O FORMATO segue a PORTA (1234 = SSE OpenAI, 11434 = NDJSON Ollama) —
         # o modo controla apenas se o sentinel é enviado (mid-death = não).
@@ -58,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             label = "lm studio" if PORT == 1234 else "ollama"
             parts = ["resposta ", f"mock do {label}", " em stream"]
+            if STATE.get("last_model"):
+                parts.append(f" [model={STATE['last_model']}]")  # prova o fio modelo→chamada
             for part in parts:
                 chunk = ('data: ' + json.dumps({"choices": [{"delta": {"content": part}}]}) if is_openai
                          else json.dumps({"response": part})) + NL2
@@ -80,8 +120,9 @@ class Handler(BaseHTTPRequestHandler):
             if PORT == 11434:
                 body = json.dumps({"response": "resposta mock do ollama"}).encode()
             else:
+                suffix = f" [model={STATE['last_model']}]" if STATE.get("last_model") else ""
                 body = json.dumps({
-                    "choices": [{"message": {"content": "resposta mock do lm studio"}}]
+                    "choices": [{"message": {"content": f"resposta mock do lm studio{suffix}"}}]
                 }).encode()
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
