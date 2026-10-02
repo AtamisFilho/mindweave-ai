@@ -7,7 +7,8 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ request }) => {
   // cadeia = apenas locais (sem chaves configuradas): [lm studio, ollama]
   // apaga TODAS as chaves (inclusive as que você configurou manualmente —
-  // este é o banco de dev compartilhado)
+  // este é o banco de dev compartilhado) e volta a cadeia ao PADRÃO —
+  // specs anteriores reordenam e salvam; sem o reset, a ordem vazia.
   const keys = await (await request.get('http://127.0.0.1:8000/api/v1/ai/keys')).json();
   for (const k of keys) {
     await request.delete(`http://127.0.0.1:8000/api/v1/ai/keys/${k.provider}`).catch(() => {});
@@ -15,6 +16,8 @@ test.beforeEach(async ({ request }) => {
   for (const provider of ['groq', 'openai', 'google', 'openrouter', 'cerebras', 'deepseek']) {
     await request.delete(`http://127.0.0.1:8000/api/v1/ai/keys/${provider}`).catch(() => {});
   }
+  await request.post('http://127.0.0.1:8000/api/v1/ai/chain/reset');
+  await request.post('http://127.0.0.1:8000/api/v1/ai/keys/reset-cooldowns');
 });
 
 async function setMode(request, port, mode) {

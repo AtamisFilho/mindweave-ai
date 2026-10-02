@@ -26,12 +26,13 @@ test('(B2) export: item desabilitado com ≤1 nó; download com H1 e aninhamento
   await expect(item).toHaveAttribute('title', /Adicione nós ao mapa antes de exportar/);
   await page.getByRole('button', { name: /Mapas/ }).click(); // fecha
 
-  // adiciona um filho e exporta (backend REAL)
+  // adiciona um filho e exporta (backend REAL). Commit do rótulo por BLUR
+  // (clicar na raiz): B3 fez Enter criar filho — não serve mais aqui.
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Adicionar Filho' }).click();
   const editor = page.locator('textarea[aria-label="Texto do nó"]');
   await editor.fill('Solar');
-  await editor.press('Enter');
+  await page.locator('.react-flow__node').first().click();
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
 
   // o export lê do SERVIDOR: espera o autosave (debounce 1s) persistir o filho
@@ -63,7 +64,7 @@ test('(B2-flush) editar → exportar IMEDIATAMENTE → blob contém o rótulo no
   // filho sincronizado (o menu exige ≥2 nós)
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Adicionar Filho' }).click();
-  await page.locator('textarea[aria-label="Texto do nó"]').press('Enter');
+  await page.locator('textarea[aria-label="Texto do nó"]').press('Escape'); // B3: Enter criaria filho
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
   await page.waitForTimeout(1600); // autosave (debounce 1s) do filho aterrissa
 

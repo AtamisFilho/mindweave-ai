@@ -7,7 +7,7 @@ import Button from '../UI/Button';
 const CustomNode = ({ id, data, selected }) => {
   const {
     updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode, compactNodes,
-    noteSelection, lastSelectedNodeId, selectedCount, suggestNodesBatch,
+    noteSelection, lastSelectedNodeId, selectedCount, suggestNodesBatch, addSiblingNode,
   } = useMindMapStore(useShallow((state) => ({
     updateNodeLabel: state.updateNodeLabel,
     performDeepResearch: state.performDeepResearch,
@@ -19,6 +19,7 @@ const CustomNode = ({ id, data, selected }) => {
     lastSelectedNodeId: state.lastSelectedNodeId,
     selectedCount: state.selectedCount,
     suggestNodesBatch: state.suggestNodesBatch,
+    addSiblingNode: state.addSiblingNode, // v0.6.0 B3: continuidade de edição
   })));
 
   const [isEditing, setIsEditing] = useState(data.isNew || false); 
@@ -30,10 +31,24 @@ const CustomNode = ({ id, data, selected }) => {
   }, [data.label]);
   
   useEffect(() => {
-    if (data.isNew && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select(); // Select text for easy replacement
-    }
+    if (!data.isNew) return undefined;
+    // O nó novo pode estar invisível no primeiro mount (medição do React
+    // Flow) — focus em elemento invisível é no-op e o autoFocus não volta.
+    // Re-tenta até concentrar (teto 1,5s); manual pós-estabilização funciona.
+    const tick = () => {
+      const el = inputRef.current;
+      if (!el) return false;
+      if (document.activeElement === el) return true;
+      // se o usuário clicou fora de propósito, o loop NÃO sequestra o foco
+      if (document.activeElement && document.activeElement !== document.body) return true;
+      el.focus();
+      el.select();
+      return document.activeElement === el;
+    };
+    tick();
+    const iv = setInterval(() => { if (tick()) clearInterval(iv); }, 80);
+    const stop = setTimeout(() => clearInterval(iv), 1500);
+    return () => { clearInterval(iv); clearTimeout(stop); };
     // No need to "clear" isNew from data here, store action updateNodeLabel does it.
   }, [data.isNew]);
 
@@ -50,10 +65,7 @@ const CustomNode = ({ id, data, selected }) => {
 
   const handleLabelBlur = () => {
     setIsEditing(false);
-    // Only update if the label has actually changed to avoid unnecessary re-renders
-    if (label.trim() !== data.label || data.isNew) { // also update if it was a new node to clear isNew
-      updateNodeLabel(id, label.trim() || "Nó Vazio");
-    }
+    commitLabel();
   };
 
   const handleDoubleClick = () => {
@@ -62,11 +74,27 @@ const CustomNode = ({ id, data, selected }) => {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const commitLabel = () => {
+    // Mesma regra do blur: só grava se mudou (ou se limpava isNew)
+    if (label.trim() !== data.label || data.isNew) {
+      updateNodeLabel(id, label.trim() || "Nó Vazio");
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
-      e.preventDefault(); // Prevent form submission or other default Enter behavior
-      handleLabelBlur();
-    } else if (e.key === 'Escape'){
+      e.preventDefault();
+      commitLabel();
+      setIsEditing(false);
+      // Continuidade de edição (v0.6.0 B3): o novo nó nasce com isNew ->
+      // o CustomNode dele abre o editor focado (rajada sem tocar o mouse)
+      addNode(id, undefined, { label: 'Novo Nó' });
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      commitLabel();
+      setIsEditing(false);
+      addSiblingNode(id);
+    } else if (e.key === 'Escape') {
       setLabel(data.label); // Revert to original label
       setIsEditing(false);
     }
@@ -118,10 +146,13 @@ const CustomNode = ({ id, data, selected }) => {
           onBlur={handleLabelBlur}
           onKeyDown={handleKeyDown}
           aria-label="Texto do nó"
+          // autoFocus (atributo, não effect): o React Flow mede o nó novo e
+          // RECREIA o subtree — o elemento focado é removido e o foco cai no
+          // body. O atributo re-dispara o focus a cada remount.
+          autoFocus
           className="text-gray-900 bg-white p-1.5 rounded border border-sky-300 w-full text-center text-sm
                      focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none custom-node-input"
           rows={Math.max(1, Math.ceil(label.length / 20))} // Basic auto-resize for rows
-          autoFocus
         />
       ) : (
         <div className="font-medium text-sm break-words p-1.5 cursor-pointer min-h-[2.5em] flex items-center justify-center" title="Clique duplo para editar">

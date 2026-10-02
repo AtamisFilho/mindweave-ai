@@ -67,7 +67,8 @@ test('(b) expandir 2 nós selecionados em lote', async ({ page }) => {
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Adicionar Filho' }).click();
   await page.locator('textarea[aria-label="Texto do nó"]').fill('Filho');
-  await page.locator('textarea[aria-label="Texto do nó"]').press('Enter');
+  // commit por blur (B3: Enter passou a criar filho)
+  await page.locator('.react-flow__node').first().click();
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
 
   // seleção múltipla: Ctrl+click no segundo nó (multiSelectionKeyCode do

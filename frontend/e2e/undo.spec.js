@@ -15,10 +15,11 @@ const undoBtn = page => page.locator('button[aria-label="Desfazer"]');
 const redoBtn = page => page.locator('button[aria-label="Refazer"]');
 
 async function addChild(page) {
-  // SEM renomear: label padrão commitado sem mudança = 1 entrada ('adicionar nó')
+  // SEM renomear: label padrão sem mudança = 1 entrada ('adicionar nó').
+  // Escape fecha o editor (B3: Enter passou a CRIAR FILHO — não serve aqui).
   await page.locator('.react-flow__node').first().click();
   await page.getByRole('button', { name: 'Adicionar Filho' }).click();
-  await page.locator('textarea[aria-label="Texto do nó"]').press('Enter');
+  await page.locator('textarea[aria-label="Texto do nó"]').press('Escape');
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
 }
 
@@ -103,6 +104,10 @@ test('(d) lote de IA = UMA entrada de undo', async ({ page }) => {
   await filho.click({ modifiers: ['Control'] });
   await page.getByRole('button', { name: 'Expandir 2 nós com IA' }).click();
   await expect(page.locator('.react-flow__node')).toHaveCount(4); // raiz + filho + 2 sugestões
+
+  // as sugestões nascem em edição (isNew): fecha o editor antes do Ctrl+Z
+  // (a guarda do input desviaria o atalho para o undo nativo do campo)
+  await page.keyboard.press('Escape');
 
   // UM Ctrl+Z desfaz o lote inteiro (as 2 sugestões somem juntas)
   await page.keyboard.press('Control+z');

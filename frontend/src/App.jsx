@@ -188,6 +188,7 @@ function App() {
                 <h3 className="text-md font-semibold mb-2 text-gray-700 dark:text-gray-200">Instruções</h3>
                 <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400 space-y-1">
                     <li>Clique duplo no nó para editar texto.</li>
+                    <li>Com o editor aberto: Enter cria um filho, Tab cria um irmão (na raiz, outra raiz) — o novo nó já abre em edição.</li>
                     <li>Selecione um nó para ver ações de IA.</li>
                     <li>Use 'Delete' ou 'Backspace' para remover nós.</li>
                     <li>Arraste de um círculo em um nó para outro para conectar.</li>

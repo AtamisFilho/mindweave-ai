@@ -330,6 +330,19 @@ const useMindMapStore = create((set, get) => ({
     return newNodeId; // Return the new node's ID
   },
 
+  // Irmão via Tab (v0.6.0 B3): nasce após os irmãos existentes (o
+  // posicionamento do addNode já faz y = pai + count*130). Irmão de raiz
+  // é outra raiz — coerente com o botão "Adicionar Nó Raiz".
+  // Com Auto ON, a mudança estrutural dispara o relayout (como toda ação).
+  addSiblingNode: (nodeId) => {
+    const node = get().nodes.find((n) => n.id === nodeId);
+    if (!node) return null;
+    if (node.data.isRoot) {
+      return get().addNode(null, { x: node.position.x + 50, y: node.position.y + 130 }, { label: 'Novo Raiz' });
+    }
+    return get().addNode(node.data.parentId, undefined, { label: 'Novo Nó' });
+  },
+
   updateNodeLabel: (nodeId, label) => {
     // Empilha só quando o rótulo muda de fato; limpar isNew sozinho é estado
     // transiente de edição, não é história do grafo.
