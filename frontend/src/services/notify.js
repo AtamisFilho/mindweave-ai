@@ -9,7 +9,7 @@ export const notifyAiError = ({ code, message, trail } = {}, { onOpenConfig } = 
   if (code === 'ALL_PROVIDERS_FAILED') {
     // Trilha resumida: um provedor:motivo por linha (o "por quê" de cada falha)
     const lines = (trail ?? [])
-      .map((t) => `• ${t.provider}: ${t.kind === 'RATE_LIMIT' ? 'rate limit' : t.kind === 'QUOTA_EXHAUSTED' ? 'quota esgotada' : t.kind === 'NETWORK_ERROR' ? 'indisponível' : (t.message || 'falhou')}`)
+      .map((t) => `• ${t.provider}: ${t.message || (t.kind === 'RATE_LIMIT' ? 'rate limit' : t.kind === 'QUOTA_EXHAUSTED' ? 'quota esgotada' : t.kind === 'NETWORK_ERROR' ? 'não respondeu' : 'falhou')}`)
       .join('\n');
     toast.error('IA indisponível', {
       description: `${message}${lines ? `\n${lines}` : ''}`,

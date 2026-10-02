@@ -11,6 +11,12 @@ import httpx
 from app.providers.base import AIProviderBase, ErrorKind, ProviderCallError
 
 _HTTP_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+# Modelos de raciocínio locais (ex.: qwen distill no LM Studio) processam o
+# prompt e "pensam" por MINUTOS antes do primeiro token de conteúdo — e podem
+# ficar >60s sem emitir NADA (prefill longo). Local não tem quota: timeout
+# generoso. (Fricção #2: 60s de read timeout classificava como
+# NETWORK_ERROR e o toast dizia "indisponível" com a probe dizendo "no ar".)
+_LOCAL_HTTP_TIMEOUT = httpx.Timeout(600.0, connect=10.0)
 
 
 class OpenAICompatibleProvider(AIProviderBase):
@@ -27,6 +33,9 @@ class OpenAICompatibleProvider(AIProviderBase):
         self.daily_quota_markers = daily_quota_markers
         self.supports_stream = True
 
+    def _timeout(self) -> httpx.Timeout:
+        return _LOCAL_HTTP_TIMEOUT if self.local else _HTTP_TIMEOUT
+
     async def complete(self, prompt: str, model: str, api_key: str | None = None,
                        base_url: str | None = None) -> str:
         if self.requires_key and not api_key:
@@ -41,7 +50,7 @@ class OpenAICompatibleProvider(AIProviderBase):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=self._timeout()) as client:
                 response = await client.post(
                     f"{(base_url or self.base_url).rstrip('/')}/chat/completions",
                     json=payload,
@@ -70,7 +79,13 @@ class OpenAICompatibleProvider(AIProviderBase):
             )
 
         data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+        message = data["choices"][0].get("message", {})
+        content = (message.get("content") or "").strip()
+        if not content:
+            # modelo de raciocínio: pode vir tudo em reasoning_content com
+            # content vazio — devolve o que o modelo de fato produziu
+            content = (message.get("reasoning_content") or "").strip()
+        return content
 
     async def complete_stream(self, prompt: str, model: str, api_key: str | None = None,
                               base_url: str | None = None):
@@ -87,8 +102,9 @@ class OpenAICompatibleProvider(AIProviderBase):
         payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": True}
         saw_done = False
 
+        yielded_any = False
         try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=self._timeout()) as client:
                 async with client.stream(
                     "POST", f"{(base_url or self.base_url).rstrip('/')}/chat/completions",
                     json=payload, headers=headers,
@@ -112,9 +128,13 @@ class OpenAICompatibleProvider(AIProviderBase):
                         if not data:
                             continue
                         chunk = json.loads(data)
-                        delta = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
+                        delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+                        if delta.get("content"):
+                            yielded_any = True
+                            yield delta["content"]
+                        # reasoning_content (modelos de raciocínio) NÃO é resposta:
+                        # não vira token — mas mantém a conexão viva e o fluxo
+                        # honesto (o done sem NENHUM conteúdo vira erro abaixo)
         except httpx.TimeoutException as exc:
             raise ProviderCallError(
                 self.id, ErrorKind.NETWORK_ERROR,
@@ -131,6 +151,16 @@ class OpenAICompatibleProvider(AIProviderBase):
             raise ProviderCallError(
                 self.id, ErrorKind.NETWORK_ERROR,
                 f"{self.label} interrompeu o stream antes de concluir.",
+                status_code=502,
+            )
+        if not yielded_any:
+            # modelo respondeu [DONE] sem NENHUM conteúdo (raciocinou e calou,
+            # ou esgotou tokens no thinking) — antes disto virava "done" com
+            # texto vazio, ou estourava timeout a montante como "indisponível"
+            raise ProviderCallError(
+                self.id, ErrorKind.PROVIDER_ERROR,
+                f"{self.label} respondeu sem conteúdo (modelo de raciocínio sem resposta final?). "
+                "Tente um modelo não-distill ou aumente o limite de tokens no servidor.",
                 status_code=502,
             )
 

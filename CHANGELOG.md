@@ -2,6 +2,25 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
+## [0.6.1.1] — 2026-10-03
+
+### Corrigido (fricção #2 do dogfooding — severidade alta: bloqueante + mensagem enganosa)
+
+- **Causa raiz**: o modelo do usuário (qwen distill no LM Studio) é um **modelo de raciocínio** — faz stream de `delta.reasoning_content` (às vezes por minutos) e o `content` real só depois (ou nunca, esgotando tokens no thinking). O adapter só lia `delta.content`: nenhum token era gerado, o read timeout de 60s estourava e a falha era classificada como `NETWORK_ERROR` → toast "LM Studio (local): indisponível" — com a probe dizendo "● no ar". A contradição era total: servidor respondendo, modelo carregado, erro de rede.
+- **Timeout local generoso (600s read)**: modelos locais não têm quota; prefill/pensamento longo não é falha de rede. Remotos mantêm 60s.
+- **`[DONE]` sem nenhum `content`**: antes virava `done` com resposta vazia (ou timeout a montante); agora é `PROVIDER_ERROR` com mensagem honesta ("respondeu sem conteúdo — modelo de raciocínio sem resposta final? Tente um modelo não-distill ou aumente o limite de tokens") e a cadeia cai para o próximo provedor ANTES do commit.
+- **`complete()` (não-stream, ex.: botão Testar)**: `content` vazio com `reasoning_content` presente devolve o raciocínio — o Testar deixou de "funcionar" com resposta vazia.
+- **`reasoning_content` NUNCA vira token** quando há `content` (a resposta do modelo continua sendo só o `content`).
+- **Trilha honesta no toast**: `notify.js` passou a mostrar a **mensagem real** de cada provedor da trilha (o rótulo do kind era um resumo que apagava o motivo — "indisponível" genérico).
+
+### Notas
+- Diagnóstico feito NA máquina do usuário, contra o LM Studio real (curl do `/v1/models`, completion com o modelo persistido e `stream:true`, stream do app com pings por minutos).
+- Conflito de ambiente detectado (registro para a v0.6.2): o LM Studio real escuta `0.0.0.0:1234` e o mock do E2E em `127.0.0.1:1234` — com `SO_REUSEADDR` ambos escutam e as conexões vão de forma não determinística. E2E local com LM Studio aberto = flaky por construção.
+
+### Testes
+- Backend: 134 → **138** pytest (fixture com o corpo real: reasoning-only+[DONE] → PROVIDER_ERROR com motivo; reasoning antes do content não vaza; timeouts 600/60; fallback na cadeia com mensagem real na trilha).
+- E2E: +1 (`onboarding.spec (d)`: probe "● no ar" + completion falhando → toast com "respondeu sem conteúdo", nunca "indisponível" genérico).
+
 ## [0.6.1] — 2026-10-03
 
 ### Adicionado (micro-release "Onboarding de provedores locais" — fricção #1 do log, severidade alta)
