@@ -11,6 +11,17 @@ const TREE = {
   ],
 };
 
+test.beforeEach(async ({ request }) => {
+  // boot determinístico: sem mapas herdados das specs anteriores, o
+  // Fricção Zero cria um mapa novo de 1 nó
+  try {
+    const maps = await (await request.get('http://127.0.0.1:8000/api/v1/maps')).json();
+    for (const map of maps) {
+      await request.delete(`http://127.0.0.1:8000/api/v1/maps/${map.id}`).catch(() => {});
+    }
+  } catch { /* backend ainda subindo: o boot da página cria o mapa */ }
+});
+
 test.afterEach(async ({ request }) => {
   try {
     const maps = await (await request.get('http://127.0.0.1:8000/api/v1/maps')).json();
@@ -42,9 +53,10 @@ test('gera mapa a partir de um tópico: conversão + mapa novo + toast Voltar', 
   await dialog.locator('input').first().fill('Energias renováveis no Brasil');
   await dialog.getByRole('button', { name: /Gerar mapa/ }).click();
 
-  // mapa novo: raiz + 3 filhos (2 solar + 1 eólica)
-  await expect(page.locator('.react-flow__node')).toHaveCount(4, { timeout: 15000 });
-  await expect(page.locator('.react-flow__edge')).toHaveCount(3);
+  // mapa novo: TODOS os tópicos viram nós — raiz + Solar + Fotovoltaica +
+  // Térmica + Eólica + Onshore (o treeToGraph não pula níveis intermediários)
+  await expect(page.locator('.react-flow__node')).toHaveCount(6, { timeout: 15000 });
+  await expect(page.locator('.react-flow__edge')).toHaveCount(5);
 
   // título do mapa novo no header
   await expect(page.locator('header button[title*="Renomear"]')).toHaveText('Energias renováveis no Brasil');
@@ -58,7 +70,7 @@ test('gera mapa a partir de um tópico: conversão + mapa novo + toast Voltar', 
       const res = await request.get('http://127.0.0.1:8000/api/v1/maps/last');
       if (res.status() !== 200) return null;
       const m = await res.json();
-      return m.document.nodes.length === 4 && m.title === 'Energias renováveis no Brasil' ? true : null;
+      return m.document.nodes.length === 6 && m.title === 'Energias renováveis no Brasil' ? true : null;
     }, { timeout: 10000 })
     .toBe(true);
 });

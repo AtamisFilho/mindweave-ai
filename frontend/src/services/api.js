@@ -71,6 +71,13 @@ export const suggestNewNodes = async (suggestionData) => {
   }
 };
 
+// Expansão em lote (v0.4.5 B4): o backend resolve rótulos/ancestrais do
+// documento persistido e expande os nós em paralelo (REST, sem streaming).
+export const suggestNodesBatch = async ({ map_id, node_ids }) => {
+  const response = await apiClient.post('/ai/suggest-nodes-batch', { map_id, node_ids });
+  return response.data;
+};
+
 // --- Maps Endpoints (persistência) ---
 export const listMaps = async () => {
   const response = await apiClient.get('/maps');
@@ -130,6 +137,12 @@ export const testProviderApi = async (provider) => {
 
 export const getProviderModelsApi = async (provider) => {
   const response = await apiClient.get(`/ai/models/${provider}`);
+  return response.data;
+};
+
+// Geração de mapa a partir de um tópico (v0.4.5 B3) — REST, sem stream
+export const generateMapApi = async (payload) => {
+  const response = await apiClient.post('/ai/generate', payload);
   return response.data;
 };
 

@@ -19,8 +19,13 @@ from app.models.ai_models import (
     AIProviderConfigResponse,
     AIResearchRequest,
     AIResearchResponse,
+    AISuggestedNode,
+    AISuggestNodesBatchRequest,
+    AISuggestNodesBatchResponse,
+    AISuggestNodesBatchResult,
     AISuggestNodesRequest,
     AISuggestNodesResponse,
+    NodeContext,
     OllamaConfig,
 )
 from app.providers import get_provider
@@ -305,6 +310,81 @@ async def suggest_nodes(request: AISuggestNodesRequest = Body(...)):
         provider_used=result["provider_label"],
         fallback_trail=result["trail"],
     )
+
+
+BATCH_MAX_NODES = 5  # teto consciente: paralelismo x rate limit dos provedores
+
+
+@router.post("/suggest-nodes-batch", response_model=AISuggestNodesBatchResponse)
+async def suggest_nodes_batch(request: AISuggestNodesBatchRequest = Body(...)):
+    """Expansão de múltiplos nós (v0.4.5 B4): {map_id, node_ids}.
+
+    Cada nó é expandido em PARALELO (asyncio.gather) pela mesma cadeia do
+    /suggest-nodes individual. Sem streaming (decisão de escopo do B4: REST
+    da v0.4; lote em stream fica para uma evolução). Falha de UM nó não
+    derruba o lote — o resultado carrega error_code por nó.
+    """
+    import asyncio
+
+    # dedupe preservando ordem (duplo clique pode enviar o id duas vezes)
+    node_ids = list(dict.fromkeys(request.node_ids))
+    if not node_ids:
+        raise HTTPException(status_code=400, detail={
+            "error_code": "EMPTY_BATCH",
+            "message": "node_ids deve conter pelo menos um nó.",
+        })
+    if len(node_ids) > BATCH_MAX_NODES:
+        raise HTTPException(status_code=400, detail={
+            "error_code": "BATCH_TOO_LARGE",
+            "message": f"Máximo de {BATCH_MAX_NODES} nós por lote.",
+        })
+
+    document = context_builder.get_document_for_map(request.map_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail={
+            "error_code": "MAP_NOT_FOUND",
+            "message": "Mapa não encontrado.",
+        })
+    nodes_by_id = {n["id"]: n for n in document.get("nodes", [])}
+    edges = document.get("edges", [])
+
+    def _prompt_for(node_id: str) -> str:
+        label = nodes_by_id[node_id].get("data", {}).get("label", "")
+        ancestors = context_builder._ancestors(node_id, edges)
+        ancestor_ctx = [
+            NodeContext(id=aid, content=nodes_by_id[aid].get("data", {}).get("label", ""))
+            for aid in ancestors if aid in nodes_by_id
+        ]
+        return build_suggest_prompt(label, get_ancestor_context_string(ancestor_ctx))
+
+    async def _expand(node_id: str) -> AISuggestNodesBatchResult:
+        if node_id not in nodes_by_id:
+            return AISuggestNodesBatchResult(
+                node_id=node_id, error_code="NODE_NOT_FOUND",
+                message="Nó não encontrado no mapa.",
+            )
+        try:
+            result = await chain_executor.execute_chain(
+                _prompt_for(node_id), model=request.model_name,
+            )
+        except AIProviderError as exc:
+            return AISuggestNodesBatchResult(
+                node_id=node_id, error_code=exc.code.value, message=exc.message,
+            )
+        except Exception as exc:  # noqa: BLE001 — isola a falha no próprio nó
+            logger.warning("suggest-nodes-batch: falha inesperada em %s: %s", node_id, exc)
+            return AISuggestNodesBatchResult(
+                node_id=node_id, error_code=ErrorCode.UNKNOWN.value,
+                message="Falha inesperada ao expandir este nó.",
+            )
+        return AISuggestNodesBatchResult(
+            node_id=node_id,
+            suggestedNodes=[AISuggestedNode(content=s) for s in parse_suggestions(result["content"])],
+            provider_used=result["provider_label"],
+        )
+
+    results = await asyncio.gather(*(_expand(nid) for nid in node_ids))
+    return AISuggestNodesBatchResponse(results=list(results))
 
 
 @router.get("/config", response_model=AIProviderConfigResponse)

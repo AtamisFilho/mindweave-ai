@@ -55,9 +55,14 @@ test('stream interrompido APÓS o commit: toast com Tentar novamente → retry c
   const retry = page.getByRole('button', { name: 'Tentar novamente' });
   await expect(retry).toBeVisible();
 
-  // upstream curado: o retry re-executa a cadeia e completa
+  // upstream curado: o retry re-executa a cadeia e completa.
+  // dispatchEvent em vez de click(): o clique por coordenadas já disparou
+  // DUAS pesquisas na suíte — com o toast animando a entrada, o hit-test
+  // acertou o botão "Pesquisa IA" do nó (outra pesquisa concorrente, que
+  // zera o streamState compartilhado e deixa o resumo do retry vazio).
+  // O dispatch vai direto ao onClick do botão do toast, sem hit-test.
   await request.get('http://127.0.0.1:1234/control?mode=stream-openai');
-  await retry.click();
+  await retry.dispatchEvent('click');
 
   await expect(page.getByText('Pesquisa concluída').first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('resposta mock do lm studio em stream').first()).toBeVisible({ timeout: 10000 });

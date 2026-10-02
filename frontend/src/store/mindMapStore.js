@@ -7,6 +7,7 @@ import {
 import {
   getAIConfig, updateAIConfig as apiUpdateAIConfig,
   suggestNewNodes as apiSuggestNewNodes,
+  suggestNodesBatch as apiSuggestNodesBatch,
   extractApiError,
   createMap as apiCreateMap,
   getMap as apiGetMap,
@@ -16,6 +17,7 @@ import {
   getChain,
   streamDeepResearch,
   streamChat,
+  generateMapApi,
 } from '../services/api'; // Renomeado para evitar conflito
 import { notifyAiError } from '../services/notify';
 import { toast } from 'sonner';
@@ -23,6 +25,11 @@ import { nanoid } from 'nanoid';
 import { computeLayout } from '../layout/engine';
 
 const CHAT_HISTORY_LIMIT = 40; // teto de mensagens persistidas em meta.chat
+
+// Pergunta fixa do "Resumir mapa" (v0.4.5 B4): reusa o /ai/chat/stream —
+// nenhuma superfície nova de UI ou endpoint; a resposta nasce na aba Chat.
+const SUMMARY_QUESTION =
+  'Faça um resumo executivo deste mapa mental, destacando os temas principais e suas relações hierárquicas.';
 
 // --- Snapshot offline (localStorage) ---
 // Se o autosave falhar por rede, o estado vai para cá; o replay acontece
@@ -121,6 +128,10 @@ const useMindMapStore = create((set, get) => ({
   streamState: null,        // linha de status viva do streaming (v0.4.5)
   chat: [],                 // [{role, content, context_meta?}] — persistido em meta.chat
   chatState: null,          // fase viva do chat (trying/committed/streaming)
+  lastSelectedNodeId: null, // último nó que o usuário selecionou (v0.4.5 B4)
+  selectedCount: 0,         // nº de nós selecionados (botão de expansão em lote)
+  generatingMap: false,     // geração de mapa a partir de tópico (v0.4.5 B3)
+  generateError: null,
   darkMode: (typeof window !== 'undefined')
     ? (localStorage.getItem('darkMode') === 'true' ||
        (!('darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches))
@@ -278,9 +289,18 @@ const useMindMapStore = create((set, get) => ({
   
   // --- AI Feature actions ---
   performDeepResearch: async (nodeId) => {
+    // UMA pesquisa viva por vez (o último pedido vence): aborta a anterior —
+    // duas correntes compartilham streamState e o resumo da primeira sai
+    // vazio (tokens dela descartados quando a segunda completa).
+    researchAbort?.abort();
+    const abort = new AbortController();
+    researchAbort = abort;
+
     set({
       aiLoading: true, aiError: null, aiErrorCode: null, researchResult: null,
-      // linha de status viva da cadeia (v0.4.5)
+      // linha de status viva da cadeia (v0.4.5) — o painel abre JUNTO:
+      // sem isso o usuário não vê trying/committed/trail de lugar nenhum
+      activePanel: 'research',
       streamState: { phase: 'trying', providerLabel: null, trail: [], text: '' },
     });
     const node = get().nodes.find(n => n.id === nodeId);
@@ -302,6 +322,7 @@ const useMindMapStore = create((set, get) => ({
     let flushTimer = null;
     const flush = () => {
       flushTimer = null;
+      if (researchAbort !== abort) return; // suplantada: não escreve no estado alheio
       set((s) => (s.streamState ? { streamState: { ...s.streamState, text: s.streamState.text + pendingText } } : {}));
       pendingText = '';
     };
@@ -309,6 +330,7 @@ const useMindMapStore = create((set, get) => ({
     try {
       let donePayload = null;
       await streamDeepResearch(researchData, {
+        signal: abort.signal,
         onEvent: (ev) => {
           if (ev.event === 'chain') {
             set((s) => {
@@ -337,6 +359,7 @@ const useMindMapStore = create((set, get) => ({
         },
       });
       if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      if (researchAbort !== abort) return; // suplantada: a mais nova escreve
       flush(); // done pode chegar antes do timer de 50ms — descarrega o texto pendente
 
       const summary = get().streamState?.text ?? '';
@@ -361,6 +384,11 @@ const useMindMapStore = create((set, get) => ({
       });
     } catch (error) {
       if (flushTimer) clearTimeout(flushTimer);
+      if (abort.signal.aborted) {
+        // suplantada por uma pesquisa mais nova: NÃO toca no estado —
+        // streamState/aiLoading agora são da corrente
+        return;
+      }
       const { code, message, provider, trail } = extractApiError(error);
       set({ aiError: message, aiErrorCode: code, aiLoading: false, streamState: null });
       if (code === 'PROVIDER_STREAM_INTERRUPTED') {
@@ -414,6 +442,55 @@ const useMindMapStore = create((set, get) => ({
       set({ aiError: message, aiErrorCode: code, aiLoading: false });
       notifyAiError(
         { code, message, provider, trail: extractApiError(error).trail },
+        { onOpenConfig: () => get().openConfigForKey(provider) },
+      );
+    }
+  },
+
+  // Expansão em lote (v0.4.5 B4): N nós selecionados -> filhos sugeridos.
+  // O backend resolve rótulos/ancestrais do documento persistido; a inserção
+  // usa o MESMO addNode atômico do fluxo individual (nó + aresta no mesmo set).
+  // Limitação consciente: REST sem streaming (o batch em stream é evolução).
+  suggestNodesBatch: async (nodeIds) => {
+    const ids = [...new Set(nodeIds ?? [])].slice(0, 5);
+    if (ids.length === 0 || get().aiLoading) return;
+    const mapId = get().currentMapId;
+    if (!mapId) {
+      toast.error('Sincronize o mapa antes de expandir em lote.');
+      return;
+    }
+    set({ aiLoading: true, aiError: null, aiErrorCode: null });
+    try {
+      const result = await apiSuggestNodesBatch({ map_id: mapId, node_ids: ids });
+      let added = 0;
+      const failures = [];
+      for (const r of result.results ?? []) {
+        if (r.error_code) { failures.push(r); continue; }
+        for (const suggestion of r.suggestedNodes ?? []) {
+          get().addNode(r.node_id, undefined, { label: suggestion.content });
+          added += 1;
+        }
+        if (r.provider_used) set({ lastProviderUsed: r.provider_used });
+      }
+      set({ aiLoading: false });
+      if (added > 0) {
+        toast.success(`${added} nós sugeridos adicionados`, {
+          description: failures.length
+            ? `${failures.length} nó${failures.length > 1 ? 's' : ''} não puderam ser expandidos (${failures[0].message ?? failures[0].error_code}).`
+            : 'Inseridos como filhos dos nós selecionados.',
+        });
+      } else if (failures.length > 0) {
+        toast.error('Nenhum nó foi expandido', {
+          description: failures[0].message ?? failures[0].error_code ?? 'A cadeia de IA falhou.',
+        });
+      } else {
+        toast.info('A IA não retornou sugestões desta vez.');
+      }
+    } catch (error) {
+      const { code, message, provider, trail } = extractApiError(error);
+      set({ aiError: message, aiErrorCode: code, aiLoading: false });
+      notifyAiError(
+        { code, message, provider, trail },
         { onOpenConfig: () => get().openConfigForKey(provider) },
       );
     }
@@ -714,7 +791,7 @@ const useMindMapStore = create((set, get) => ({
   // --- Chat com o mapa (v0.4.5 B2) ---
   askMap: async (question, focusNodeId = null) => {
     const trimmed = question.trim();
-    if (!trimmed || get().chatState) return;
+    if (!trimmed || get().chatState) return false;
     const mapId = get().currentMapId;
     set((s) => ({
       chat: [...s.chat, { role: 'user', content: trimmed }],
@@ -767,6 +844,7 @@ const useMindMapStore = create((set, get) => ({
         chatState: null,
         lastProviderUsed: donePayload?.provider_used ?? null,
       }));
+      return true;
     } catch (error) {
       if (flushTimer) clearTimeout(flushTimer);
       const { code, message, provider, trail } = extractApiError(error);
@@ -777,17 +855,85 @@ const useMindMapStore = create((set, get) => ({
       );
       // remove a pergunta órfã (não houve resposta): o usuário reformula
       set((s) => ({ chat: s.chat.filter((m, i, arr) => !(i === arr.length - 1 && m.role === 'user')) }));
+      return false;
     }
+  },
+
+  // Resumir mapa (v0.4.5 B4): pergunta fixa no chat — sem endpoint nem UI nova.
+  // Abre a aba Chat ANTES de perguntar: o usuário vê o resumo nascer em stream.
+  summarizeMap: async () => {
+    if (get().chatState) return;
+    set({ activePanel: 'chat' });
+    const ok = await get().askMap(SUMMARY_QUESTION);
+    if (ok) toast.success('Resumo gerado na aba Chat');
   },
 
   clearChat: () => set({ chat: [], chatState: null }),
 
   hydrateChat: (chatHistory) => set({ chat: Array.isArray(chatHistory) ? chatHistory : [] }),
 
+  // --- Geração de mapa (v0.4.5 B3) — NÃO-DESTRUTIVA: cria mapa NOVO ---
+  // O mapa atual nunca é sobrescrito; o toast oferece "Voltar ao anterior".
+  generateMap: async (topic, depth = 3, breadth = 5) => {
+    const clean = topic.trim();
+    if (!clean || get().generatingMap) return;
+    const previousMapId = get().currentMapId;
+    set({ generatingMap: true, generateError: null });
+
+    try {
+      const result = await generateMapApi({ topic: clean, depth, breadth });
+      const { treeToGraph } = await import('../utils/treeToGraph');
+      const graph = treeToGraph(result.tree);
+
+      // persiste o mapa novo (Fricção Zero: já nasce salvo)
+      const created = await apiCreateMap({
+        title: clean.slice(0, 80),
+        document: {
+          nodes: graph.nodes, edges: graph.edges,
+          meta: { layout: { schema: 'balanced-lr', edgeType: null, compact: false } },
+        },
+      });
+
+      set({
+        nodes: graph.nodes,
+        edges: graph.edges,
+        mapTitle: created.title,
+        currentMapId: created.id,
+        mapVersion: created.version,
+        layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
+        chat: [], researchHistory: [], researchPanelNodeId: null,
+        aiLoading: false, generatingMap: false,
+        lastProviderUsed: result.provider_used ?? null,
+      });
+      toast.success(`Mapa "${created.title}" gerado`, {
+        description: `${graph.count} nós · via ${result.provider_used}.`,
+        action: previousMapId && previousMapId !== created.id
+          ? { label: 'Voltar ao anterior', onClick: () => get().loadMap(previousMapId) }
+          : undefined,
+      });
+    } catch (error) {
+      set({ generatingMap: false });
+      const { message } = extractApiError(error);
+      set({ generateError: message });
+      toast.error('Falha ao gerar o mapa', { description: message });
+    }
+  },
+
   // --- UI State ---
   setActivePanel: (panelName) => set({ activePanel: panelName }),
   clearResearchError: () => set({ aiError: null, aiErrorCode: null }),
   clearResearchResult: () => set({ researchResult: null }),
+
+  // Seleção múltipla (v0.4.5 B4): o CustomNode reporta transições de seleção;
+  // aqui ficam o CONTAGEM e o ÚLTIMO selecionado (ordem real de clique).
+  noteSelection: (nodeId, selected) => {
+    const s = get();
+    const count = s.nodes.filter((n) => n.selected).length;
+    const patch = {};
+    if (selected && s.lastSelectedNodeId !== nodeId) patch.lastSelectedNodeId = nodeId;
+    if (count !== s.selectedCount) patch.selectedCount = count;
+    if (Object.keys(patch).length) set(patch);
+  },
 
   toggleDarkMode: () =>
     set((s) => {
@@ -821,6 +967,9 @@ const useMindMapStore = create((set, get) => ({
 // --- Autosave: qualquer mutação de nós/arestas/título agenda o save ---
 // Guarda: durante a hidratação (bootstrap/load/create) o autosave fica suspenso.
 let autosaveTimer = null;
+
+// Pesquisa viva corrente (AbortController) — UMA por vez; a mais nova vence
+let researchAbort = null;
 
 // B4: assinatura ESTRUTURAL (ids) — muda ao adicionar/remover/conectar,
 // mas NÃO em drag de posição: o auto-layout não briga com o usuário.

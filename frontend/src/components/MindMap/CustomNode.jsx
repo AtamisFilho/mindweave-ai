@@ -5,13 +5,20 @@ import useMindMapStore from '../../store/mindMapStore';
 import Button from '../UI/Button';
 
 const CustomNode = ({ id, data, selected }) => {
-  const { updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode, compactNodes } = useMindMapStore(useShallow((state) => ({
+  const {
+    updateNodeLabel, performDeepResearch, suggestNewNodes, aiLoading, addNode, compactNodes,
+    noteSelection, lastSelectedNodeId, selectedCount, suggestNodesBatch,
+  } = useMindMapStore(useShallow((state) => ({
     updateNodeLabel: state.updateNodeLabel,
     performDeepResearch: state.performDeepResearch,
     suggestNewNodes: state.suggestNewNodes,
     aiLoading: state.aiLoading,
     addNode: state.addNode, // For adding child nodes via button
     compactNodes: state.layoutMeta?.compact ?? false, // densidade "list" (v0.5)
+    noteSelection: state.noteSelection, // v0.4.5 B4: seleção múltipla
+    lastSelectedNodeId: state.lastSelectedNodeId,
+    selectedCount: state.selectedCount,
+    suggestNodesBatch: state.suggestNodesBatch,
   })));
 
   const [isEditing, setIsEditing] = useState(data.isNew || false); 
@@ -29,6 +36,12 @@ const CustomNode = ({ id, data, selected }) => {
     }
     // No need to "clear" isNew from data here, store action updateNodeLabel does it.
   }, [data.isNew]);
+
+  // Seleção múltipla (v0.4.5 B4): reporta a transição ao store — a ordem real
+  // de clique define o "último selecionado" (onde o botão de lote aparece).
+  useEffect(() => {
+    noteSelection(id, selected);
+  }, [selected, id, noteSelection]);
 
 
   const handleLabelChange = (e) => {
@@ -67,6 +80,13 @@ const CustomNode = ({ id, data, selected }) => {
   const onSuggestNodes = (e) => {
     e.stopPropagation();
     suggestNewNodes(id);
+  };
+
+  // Expansão em lote (v0.4.5 B4): todos os nós selecionados de uma vez
+  const onExpandBatch = (e) => {
+    e.stopPropagation();
+    const ids = useMindMapStore.getState().nodes.filter((n) => n.selected).map((n) => n.id);
+    suggestNodesBatch(ids);
   };
 
   const onAddChildNode = (e) => {
@@ -138,6 +158,19 @@ const CustomNode = ({ id, data, selected }) => {
           >
             {aiLoading ? 'Sugerindo...' : 'Sugerir Nós IA'}
           </Button>
+          {selectedCount > 1 && lastSelectedNodeId === id && (
+            <Button
+              onClick={onExpandBatch}
+              variant="outline"
+              className="w-full bg-violet-50! text-violet-700! hover:bg-violet-100!
+                         dark:bg-violet-700! dark:text-violet-100! dark:hover:bg-violet-600!
+                         text-xs py-1 border-violet-200! dark:border-violet-600!"
+              disabled={aiLoading}
+              title={`Expande os ${selectedCount} nós selecionados de uma vez (máx. 5)`}
+            >
+              {aiLoading ? 'Expandindo...' : `Expandir ${selectedCount} nós com IA`}
+            </Button>
+          )}
            <Button
             onClick={onAddChildNode}
             variant="outline"
