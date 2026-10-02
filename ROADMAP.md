@@ -35,15 +35,14 @@ Estado atual (v0.4.0): **IA sempre-disponível** — cadeia de 8 provedores com 
 - [x] **UI da Cadeia** (ordem ▲▼, toggles, Testar conexão, modelos locais, Resetar) + badge no header com fallback
 - [x] 'Configuração de modelo por requisição' — **subsumido**: cada provedor da cadeia carrega seu modelo
 
-## v0.4.5 — Experiência de IA
->>>>>>> feature/provider-chain
+## v0.4.5 — Experiência de IA ✅ v0.4.5 — ver [docs/design/ai-experience.md](docs/design/ai-experience.md)
 
-- [ ] **Streaming** das respostas (SSE) com a trilha de fallbacks em tempo real ('tentando groq… → gemini…')
-- [ ] **Chat com o mapa**: perguntas sobre o conteúdo do grafo
-- [ ] **Gerar mapa inteiro a partir de um tópico** (não só expandir nós)
-- [ ] **Resumo do mapa completo** (percurso hierárquico → LLM)
-- [ ] **Drag-and-drop na cadeia** (dnd-kit; ▲▼ permanece acessível)
-- [ ] Seleção múltipla de nós → expandir vários de uma vez
+- [x] **Streaming** das respostas (SSE) com a trilha de fallbacks em tempo real ('tentando groq… → gemini…')
+- [x] **Chat com o mapa**: perguntas sobre o conteúdo do grafo
+- [x] **Gerar mapa inteiro a partir de um tópico** (não só expandir nós)
+- [x] **Resumo do mapa completo** (reusa o chat com pergunta fixa — resposta na aba Chat)
+- [x] **Drag-and-drop na cadeia** (dnd-kit, +15KB gzip; ▲▼ permanece acessível)
+- [x] Seleção múltipla de nós → expandir vários de uma vez (`/ai/suggest-nodes-batch`, asyncio.gather)
 
 ### v0.5 — Layout Engine (esquemas estilo niMind) ✅ v0.5.0 — ver [docs/design/layout-engine.md](docs/design/layout-engine.md)
 
