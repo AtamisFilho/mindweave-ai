@@ -728,6 +728,7 @@ const useMindMapStore = create((set, get) => ({
         clearPending();
       }
       if (manual) toast.success('Mapa salvo');
+      return true;
     } catch (error) {
       if (error?.response?.status === 409) {
         // Outra aba salvou: nunca sobrescreve calado — oferece recarregar
@@ -750,6 +751,7 @@ const useMindMapStore = create((set, get) => ({
         set({ saveState: 'offline', pendingLocal: true });
         if (manual) toast.error('Sem conexão — alterações salvas localmente');
       }
+      return false; // offline: quem chamou decide (export avisa e segue)
     }
   },
 

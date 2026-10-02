@@ -82,6 +82,10 @@ const MapsMenu = () => {
   const handleExportMarkdown = async () => {
     if (!currentMapId || nodeCount <= 1) return;
     setOpen(false);
+    // o export lê do SERVIDOR: flush do autosave pendente (debounce 1s) —
+    // sem isso, editar e exportar em seguida baixava o documento velho
+    const saved = await useMindMapStore.getState().saveNow();
+    if (!saved) toast.warning('Offline — exportando a última versão sincronizada');
     try {
       const { blob, filename } = await exportMapMarkdown(currentMapId);
       const url = URL.createObjectURL(blob);

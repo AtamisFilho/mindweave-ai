@@ -56,6 +56,39 @@ test('(B2) export: item desabilitado com ≤1 nó; download com H1 e aninhamento
   await expect(page.getByText(/Exportado: .+\.md/)).toBeVisible(); // toast
 });
 
+test('(B2-flush) editar → exportar IMEDIATAMENTE → blob contém o rótulo novo', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.react-flow__node')).toHaveCount(1, { timeout: 15000 });
+
+  // filho sincronizado (o menu exige ≥2 nós)
+  await page.locator('.react-flow__node').first().click();
+  await page.getByRole('button', { name: 'Adicionar Filho' }).click();
+  await page.locator('textarea[aria-label="Texto do nó"]').press('Enter');
+  await expect(page.locator('.react-flow__node')).toHaveCount(2);
+  await page.waitForTimeout(1600); // autosave (debounce 1s) do filho aterrissa
+
+  // muda o rótulo da RAIZ (mudança NÃO sincronizada) e exporta na hora:
+  // o saveNow() no clique do export tem que flushar antes do GET.
+  // Duplo clique no RÓTULO (o painel de ações expande o nó para baixo —
+  // dblclick no contêiner inteiro perde o segundo clique).
+  await page.locator('.react-flow__node').first().click();
+  await page.locator('.react-flow__node').first().getByText('Nó Raiz').dblclick();
+  const editor = page.locator('textarea[aria-label="Texto do nó"]');
+  await expect(editor).toBeVisible();
+  await editor.fill('Hidroponia');
+  await page.getByRole('button', { name: /Mapas/ }).click(); // blur commita e abre o menu
+  const item = page.getByRole('button', { name: /Markdown \(\.md\)/ });
+  await expect(item).toBeEnabled();
+
+  const downloadPromise = page.waitForEvent('download');
+  await item.click();
+  const download = await downloadPromise;
+  const content = fs.readFileSync(await download.path(), 'utf8');
+  expect(content).toMatch(/^# Mapa sem título\n/); // título do MAPA não muda com o nó
+  expect(content).toContain('- Hidroponia'); // rótulo NOVO: o flush do saveNow funcionou
+  await expect(page.getByText(/Exportado: .+\.md/)).toBeVisible();
+});
+
 test('(B2.5) pesquisa sobrevive ao F5 (meta.research no blob)', async ({ page, request }) => {
   await page.route('**/api/v1/ai/deep-research/stream', async (route) => {
     const sse = [
