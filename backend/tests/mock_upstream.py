@@ -88,6 +88,22 @@ class Handler(BaseHTTPRequestHandler):
         # O FORMATO segue a PORTA (1234 = SSE OpenAI, 11434 = NDJSON Ollama) —
         # o modo controla apenas se o sentinel é enviado (mid-death = não).
         NL2 = chr(10) + chr(10)
+        if mode == "stream-reasoning" and PORT == 1234:
+            # v0.6.1.1: modelo de raciocínio — SÓ reasoning_content + [DONE],
+            # NENHUM content (fixture da fricção #2)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            for _ in range(4):
+                chunk = 'data: ' + json.dumps({"choices": [{"delta": {"reasoning_content": "pensando..."}}]}) + chr(10) + chr(10)
+                self.wfile.write(chunk.encode())
+                self.wfile.flush()
+                time.sleep(0.2)
+            self.wfile.write(b'data: [DONE]' + b'\n\n')
+            self.wfile.flush()
+            return
+
         if mode in ("stream-openai", "stream-ollama", "stream-mid-death"):
             is_openai = PORT == 1234
             self.send_response(200)

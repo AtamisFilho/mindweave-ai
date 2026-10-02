@@ -83,6 +83,29 @@ test('(b) servidor fora: chip ○ com instruções + helper de primeira execuç�
   await expect(page.locator('select[aria-label="Modelo do LM Studio (local)"]')).toHaveCount(0);
 });
 
+test('(d) fricção #2: probe "no ar" + completion falhando → toast com o MOTIVO real', async ({ page, request }) => {
+  // LM Studio responde /v1/models (probe ●) mas o completion só raciocina
+  // e cala (stream-reasoning: reasoning_content + [DONE], zero content).
+  // Ollama fora → ALL_PROVIDERS_FAILED — o toast deve mostrar o motivo real
+  // ("respondeu sem conteúdo"), nunca "indisponível" genérico.
+  await request.get('http://127.0.0.1:1234/control?mode=stream-reasoning');
+  await request.get('http://127.0.0.1:11434/control?mode=down');
+
+  await page.goto('/');
+  await expect(page.locator('.react-flow__node')).toHaveCount(1, { timeout: 15000 });
+
+  // probe diz "no ar" (o servidor ESTÁ no ar — é o modelo que falha)
+  await page.getByRole('button', { name: 'IA Config' }).click();
+  await expect(page.getByText('● no ar').first()).toBeVisible({ timeout: 15000 });
+
+  await page.locator('.react-flow__node').first().click();
+  await page.getByRole('button', { name: 'Pesquisa IA' }).click();
+
+  // o toast carrega o motivo por provedor — a honestidade é o que se prova
+  await expect(page.getByText('IA indisponível', { exact: true })).toBeVisible({ timeout: 20000 }); // toast (o badge do header tem ⚠️)
+  await expect(page.getByText(/respondeu sem conteúdo/).first()).toBeVisible();
+});
+
 test('(c) depois de ligar o servidor, helper some e chip vira ●', async ({ page, request }) => {
   await request.get('http://127.0.0.1:11434/control?mode=down');
   await request.get('http://127.0.0.1:1234/control?mode=down');
