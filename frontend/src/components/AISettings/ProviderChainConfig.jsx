@@ -12,7 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import useMindMapStore from '../../store/mindMapStore';
 import Button from '../UI/Button';
 import {
-  saveChain, resetChainApi, testProviderApi, getProviderModelsApi,
+  saveChain, resetChainApi, testProviderApi,
 } from '../../services/api';
 
 const PROVIDER_META = {
@@ -20,6 +20,70 @@ const PROVIDER_META = {
   cerebras: { icon: '🧠' }, deepseek: { icon: '🐋' }, openai: { icon: '🤖' },
   ollama: { icon: '🦙', local: true }, lmstudio: { icon: '🖥️', local: true },
 };
+
+
+const INSTRUCTIONS = {
+  lmstudio: ['Abra o LM Studio.', 'Va na aba Developer (icone de terminal).', 'Clique em Start Server (porta 1234).'],
+  ollama: ['Abra um terminal.', 'Rode: ollama serve', 'Deixe a janela aberta.'],
+};
+
+// Chip "● no ar" / "○ servidor fora" — clique quando fora mostra os passos
+function StatusChip({ provider, status }) {
+  const [open, setOpen] = useState(false);
+  if (status === null || status === undefined) return <span className="text-gray-300 text-[10px]">…</span>;
+  if (status === 'up') {
+    return <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-medium shrink-0" title="Servidor respondendo">● no ar</span>;
+  }
+  return (
+    <span className="relative shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-red-500 dark:text-red-400 text-[10px] font-medium"
+        title="Servidor local não respondeu — clique para ver como ligar"
+      >
+        ○ servidor fora
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-2 z-20 text-[11px]">
+          <p className="font-medium text-gray-700 dark:text-gray-200 mb-1">Como ligar o servidor:</p>
+          <ol className="list-decimal list-inside text-gray-600 dark:text-gray-300 space-y-0.5">
+            {(INSTRUCTIONS[provider] ?? []).map((st) => <li key={st}>{st}</li>)}
+          </ol>
+          <button onClick={() => setOpen(false)} className="mt-1 text-gray-400 hover:text-gray-600">fechar</button>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// 📋 virou seleção (v0.6.1): com servidor no ar, dropdown; fora, texto livre
+function ModelSelect({ provider, status, value, onSelect }) {
+  const models = useMindMapStore((s) => s.localModels[provider] ?? []);
+  if (status === 'up' && models.length > 0) {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onSelect(e.target.value)}
+        title={'Modelo usado nas chamadas — modelos do ' + provider}
+        aria-label={'Modelo do ' + provider}
+        className="text-[10px] border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 max-w-[90px] truncate"
+      >
+        <option value="">modelo: padrão</option>
+        {models.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input
+      value={value}
+      onChange={(e) => onSelect(e.target.value)}
+      placeholder="modelo"
+      title="Servidor fora do ar — digite o id do modelo se souber (ou ligue o servidor e clique em Verificar locais)"
+      aria-label={'Modelo do ' + provider}
+      className="w-16 text-[10px] border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1"
+    />
+  );
+}
 
 // Estados por provedor: idle | testing | ok | fail(kind) | sem chave
 const statusIcon = (entry, test) => {
@@ -32,7 +96,7 @@ const statusIcon = (entry, test) => {
 
 // Linha da cadeia (v0.4.5 B4): reordenável por drag (handle ⠿) — os botões
 // ▲▼ permanecem como fallback de acessibilidade/precisão.
-function ChainRow({ entry, index, chainLength, onMove, onToggle, onRunTest, test, hasModelList, onLoadModels }) {
+function ChainRow({ entry, index, chainLength, onMove, onToggle, onRunTest, test, localStatus, onModelSelect }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: entry.provider });
   const meta = PROVIDER_META[entry.provider] ?? { icon: '🔌' };
   return (
@@ -59,6 +123,9 @@ function ChainRow({ entry, index, chainLength, onMove, onToggle, onRunTest, test
         {entry.provider}
         {entry.model ? <span className="text-gray-400"> · {entry.model}</span> : null}
       </span>
+      {(entry.provider === 'lmstudio' || entry.provider === 'ollama') && (
+        <StatusChip provider={entry.provider} status={localStatus[entry.provider]} />
+      )}
       <span title={statusTitle(entry, test)}>{statusIcon(entry, test)}</span>
       <button onClick={() => onMove(index, -1)} disabled={index === 0} title="Subir (prioridade maior)" aria-label={`Subir ${entry.provider}`} className="px-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30">▲</button>
       <button onClick={() => onMove(index, 1)} disabled={index === chainLength - 1} title="Descer (prioridade menor)" aria-label={`Descer ${entry.provider}`} className="px-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30">▼</button>
@@ -76,29 +143,41 @@ function ChainRow({ entry, index, chainLength, onMove, onToggle, onRunTest, test
       >
         Testar
       </button>
-      {hasModelList || entry.provider === 'lmstudio' || entry.provider === 'ollama' ? (
-        <button
-          onClick={() => (hasModelList ? undefined : onLoadModels(entry))}
-          title="Listar modelos disponíveis"
-          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-0.5"
-        >
-          📋
-        </button>
-      ) : null}
+      {(entry.provider === 'lmstudio' || entry.provider === 'ollama') && (
+        <ModelSelect
+          provider={entry.provider}
+          status={localStatus[entry.provider]}
+          value={entry.model ?? ''}
+          onSelect={(v) => onModelSelect(entry.provider, v)}
+        />
+      )}
     </div>
   );
 }
 
 export default function ProviderChainConfig() {
-  const { chain, setChain, refreshChain } = useMindMapStore(useShallow((s) => ({
+  const {
+    chain, setChain, refreshChain, localStatus, probeLocalServers, persistChainEntry,
+  } = useMindMapStore(useShallow((s) => ({
     chain: s.chainConfig,
     setChain: s.setChainConfig,
     refreshChain: s.fetchChainConfig,
+    localStatus: s.localStatus,
+    probeLocalServers: s.probeLocalServers,
+    persistChainEntry: s.persistChainEntry,
   })));
   const [tests, setTests] = useState({}); // provider -> {state, message}
-  const [models, setModels] = useState({}); // provider -> [nomes]
 
   useEffect(() => { refreshChain(); }, [refreshChain]);
+
+  // probe dos locais ao abrir a aba (chips ● no ar / ○ fora) — v0.6.1
+  useEffect(() => { probeLocalServers(); }, [probeLocalServers]);
+
+  // 📋 virou seleção (v0.6.1): escolher modelo persiste na hora
+  const handleModelSelect = async (provider, value) => {
+    setChain(chain.map((e) => (e.provider === provider ? { ...e, model: value || null } : e)));
+    await persistChainEntry(provider, { model: value || null });
+  };
 
   const move = (index, delta) => {
     const next = [...chain];
@@ -157,14 +236,7 @@ export default function ProviderChainConfig() {
     }
   };
 
-  const loadModels = async (entry) => {
-    try {
-      const result = await getProviderModelsApi(entry.provider);
-      setModels((m) => ({ ...m, [entry.provider]: result.models ?? [] }));
-    } catch {
-      toast.error(`Não foi possível listar modelos de ${entry.provider}.`);
-    }
-  };
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -184,9 +256,18 @@ export default function ProviderChainConfig() {
   return (
     <div>
       <h3 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">Cadeia de Provedores</h3>
-      <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
-        A IA tenta os provedores na ordem abaixo e cai automaticamente para o próximo em caso de falha. O primeiro é o preferido; locais ficam por último como fallback soberano. Arraste pelo ⠿ (ou use ▲▼) para reordenar.
-      </p>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+          A IA tenta os provedores na ordem abaixo e cai automaticamente para o próximo em caso de falha. O primeiro é o preferido; locais ficam por último como fallback soberano. Arraste pelo ⠿ (ou use ▲▼) para reordenar.
+        </p>
+        <button
+          onClick={() => probeLocalServers()}
+          className="text-[10px] border border-gray-300 dark:border-gray-600 rounded px-1.5 py-0.5 hover:border-blue-400 text-gray-500 dark:text-gray-400 shrink-0"
+          title="Verifica de novo se os servidores locais (LM Studio/Ollama) estão no ar"
+        >
+          Verificar locais
+        </button>
+      </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={chain.map((c) => c.provider)} strategy={verticalListSortingStrategy}>
@@ -201,21 +282,13 @@ export default function ProviderChainConfig() {
                 onToggle={toggle}
                 onRunTest={runTest}
                 test={tests[entry.provider]}
-                hasModelList={entry.provider in models}
-                onLoadModels={loadModels}
+                localStatus={localStatus}
+                onModelSelect={handleModelSelect}
               />
             ))}
           </div>
         </SortableContext>
       </DndContext>
-
-      {Object.entries(models).map(([provider, list]) => (
-        list?.length ? (
-          <p key={provider} className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
-            {provider}: {list.slice(0, 4).join(', ')}{list.length > 4 ? '…' : ''}
-          </p>
-        ) : null
-      ))}
 
       {Object.entries(tests).filter(([, t]) => t?.message).map(([provider, t]) => (
         <p key={provider} className={`text-[10px] mt-1 ${t.state === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>

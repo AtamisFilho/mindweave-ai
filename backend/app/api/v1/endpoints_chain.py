@@ -1,6 +1,5 @@
-"""Endpoints da cadeia de provedores (prefixo /api/v1/ai/chain)
-e da listagem de modelos locais (/api/v1/ai/models/{provider})."""
-from fastapi import APIRouter, Body, HTTPException
+"""Endpoints da cadeia de provedores (prefixo /api/v1/ai/chain)."""
+from fastapi import APIRouter, Body
 
 from app.providers import PROVIDERS
 from app.services import chain_config_service, chain_executor
@@ -16,6 +15,7 @@ def _chain_entry(entry: dict) -> dict:
         "enabled": entry["enabled"],
         "order": entry["order"],
         "model": entry.get("model"),
+        "base_url": entry.get("base_url"),
         "local": provider.local,
         "requires_key": provider.requires_key,
         "cooldown_until": chain_executor.cooldown_until(entry["provider"]),
@@ -39,27 +39,4 @@ async def reset_chain():
     return [_chain_entry(entry) for entry in config]
 
 
-@router.get("/models/{provider}")
-async def list_models(provider: str):
-    """Lista modelos disponíveis (apenas provedores locais)."""
-    if provider not in PROVIDERS or not PROVIDERS[provider].local:
-        raise HTTPException(status_code=400, detail={
-            "error_code": "LOCAL_ONLY",
-            "message": "Listagem de modelos disponível apenas para provedores locais.",
-        })
-    provider_obj = PROVIDERS[provider]
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-            if provider == "ollama":
-                resp = await client.get(f"{provider_obj.base_url.rstrip('/')}/api/tags")
-                models = [m.get("name") for m in resp.json().get("models", []) if m.get("name")]
-            else:  # lm studio (OpenAI-compatible)
-                resp = await client.get(f"{provider_obj.base_url.rstrip('/')}/v1/models")
-                models = [m.get("id") for m in resp.json().get("data", []) if m.get("id")]
-        return {"provider": provider, "models": models}
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail={
-            "error_code": "PROVIDER_UNREACHABLE",
-            "message": f"Não foi possível listar modelos de {provider} (servidor local fora do ar?).",
-        }) from exc
+

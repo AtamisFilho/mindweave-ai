@@ -62,7 +62,9 @@ Escala só depois: a v1.0 é reavaliada pelo que o uso provar.
 - [x] **Export Markdown** (a mesma travessia do contexto do chat; cross-links em todos os ramos; sem teto de profundidade) — v0.6.0 B2
 - [x] **Diário de pesquisas persistido** (`meta.research`, teto 40 — sobrevive ao F5; promovido à v0.6.0 pelo orquestrador) — v0.6.0 B2.5
 - [x] **Enter/Tab — continuidade de edição** (filho/irmão com corrente de foco; Tab na raiz = outra raiz; portão disparou: B1+B2+B2.5 fecharam sem drift) — v0.6.0 B3
-- [ ] Export OPML — v0.6.1
+- [x] **Onboarding de provedores locais** (status vivo ●/○ com instruções, cartão LM Studio com URL base + seleção de modelo persistida e usada nas chamadas, helper de primeira execução; diagnóstico: o 📋 era 404 + /v1/v1 + modelo ignorado) — v0.6.1
+- [ ] Export OPML — v0.6.2
+- [ ] Export com checkbox "incluir pesquisas" — v0.6.2
 - [ ] **Micro-releases v0.6.x** alimentadas pelo log de fricções (candidatas remanescentes: Ctrl+F localizar nó, duplicar mapa como checkpoint)
 - [ ] Veredito do dogfooding: o que da v1.0 se confirma, muda ou morre
 

@@ -140,6 +140,17 @@ export const getProviderModelsApi = async (provider) => {
   return response.data;
 };
 
+// Probe do onboarding local (v0.6.1): 200 = servidor no ar ({models, base_url});
+// 503 = fora. Quem chama decide o chip.
+export const listProviderModels = async (provider) => {
+  try {
+    const response = await apiClient.get(`/ai/models/${provider}`);
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : new Error('servidor local inacessível');
+  }
+};
+
 // Geração de mapa a partir de um tópico (v0.4.5 B3) — REST, sem stream
 export const generateMapApi = async (payload) => {
   const response = await apiClient.post('/ai/generate', payload);

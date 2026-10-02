@@ -27,10 +27,10 @@ class StubProvider:
         self.error = error
         self.closed = False
 
-    async def complete(self, prompt, model, api_key=None):
+    async def complete(self, prompt, model, api_key=None, base_url=None):
         return "".join(self.deltas)
 
-    async def complete_stream(self, prompt, model, api_key=None):
+    async def complete_stream(self, prompt, model, api_key=None, base_url=None):
         try:
             emitted = 0
             for delta in self.deltas:

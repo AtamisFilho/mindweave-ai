@@ -16,3 +16,13 @@ Formato:
 ---
 
 <!-- entradas a partir daqui — não reordene, não edite entradas antigas -->
+
+## 2026-10-03 — onboarding de provedor local (primeiro uso)
+- **Fricção:** tenho o LM Studio instalado e não consegui usar a IA — o app não mostra se o servidor local está no ar, não existe cartão de configuração do LM Studio (só o botão 📋, que não leva a nada), e nada ensina que preciso ligar o servidor primeiro.
+- **Severidade:** alta (bloqueante de onboarding)
+- **Contorno usado:** nenhum — desisti de usar por lá.
+
+> [!NOTA] Entrada RECONSTRUÍDA pelo orquestrador em 2026-10-03 a partir da
+> mensagem de triagem (o texto original foi digitado quando o arquivo ainda
+> não existia na árvore — incidente de branch registrado no CHANGELOG).
+

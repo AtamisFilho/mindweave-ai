@@ -2,7 +2,33 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
-## [0.4.5] — 2026-10-02
+## [0.6.1] — 2026-10-03
+
+### Adicionado (micro-release "Onboarding de provedores locais" — fricção #1 do log, severidade alta)
+
+- **Status vivo dos servidores locais** (LM Studio e Ollama): probe ao abrir a aba IA Config + botão "Verificar locais"; chip **"● no ar" / "○ servidor fora"** em cada linha da cadeia e no cartão novo. No "fora", o chip abre os 3 passos em pt-BR para ligar (LM Studio: Developer ▸ Start Server; Ollama: `ollama serve`). O app detecta "servidor respondendo", nunca "instalado" — e o texto ensina isso.
+- **Cartão "LM Studio (local)"** nas Configurações de IA (espelho do do Ollama): URL Base (default `http://localhost:1234/v1`, editável e persistida) + Modelo como SELECT populado pelo servidor; com o servidor fora, vira texto livre. 
+- **Helper de primeira execução**: nenhum local no ar e nenhuma chave configurada → painel "Como ativar a IA em 2 minutos" com os dois caminhos locais (LM Studio ou Ollama — sem chave de nuvem) e botão "Verificar de novo".
+- **📋 virou "listar E selecionar"**: na linha da cadeia, os locais ganham dropdown de modelos que **persiste na hora** (`provider_chain.model`) e passa a ser o modelo usado nas chamadas.
+
+### Corrigido — o diagnóstico da fricção (o 📋 nunca funcionou; eram TRÊS bugs empilhados)
+
+1. **Rota no mount errado**: a listagem vivia em `/api/v1/ai/chain/models/{provider}` enquanto o frontend SEMPRE chamou `/api/v1/ai/models/{provider}` → **404 desde a v0.4**. Movida para o mount correto.
+2. **Caminho duplicado**: para LM Studio o handler montava `{base}/v1/models` com `base` já terminando em `/v1` → `/v1/v1/models`, inexistente. Corrigido (e o caminho agora honra o `base_url` configurado).
+3. **`provider_chain.model` era ignorado**: o `execute_chain` (REST e stream) só usava `model` da requisição (para o preferred) ou o `default_model` do adapter — para LM Studio, **`"local-model"`**, um placeholder que o servidor real rejeita. Agora o modelo por provedor da cadeia vence o default (request do preferred continua em cima), e a `base_url` da cadeia sobrescreve a do adapter (parâmetro novo `base_url` em `complete`/`complete_stream`).
+
+### Técnico
+- Coluna nova `provider_chain.base_url` (migração idempotente no boot); `save_chain_config` preserva a `base_url` anterior quando a entrada omite (o save da UI comum não apaga a configuração do cartão).
+- mock_upstream serve `/v1/models` e `/api/tags` (respeita `mode=down`) e **ecoa o modelo recebido** no texto (`[model=...]`) — é assim que o E2E prova que a seleção chegou à chamada.
+- Correção no próprio mock: `mode=down` agora é checado ANTES do `/control` não ficar — `/control` volta a ser o primeiro branch (servidor "fora" continuava controlável).
+
+### Testes
+- Backend: 127 → **134** pytest (persistência/preservação de `base_url`, modelo da cadeia usado na chamada, `base_url` usada na chamada, list_models caminho correto + override + 503).
+- Frontend: 96 → **100** vitest (probe up/down, persistChainEntry preservando os demais, falha sem corromper) + **3 E2E** (`onboarding.spec.js`: no ar → seleção usada de verdade; fora → chip+instruções+helper; recuperação → helper some).
+
+## [0.6.0] — 2026-10-02
+
+## [0.6.0] — 2026-10-02## [0.4.5] — 2026-10-02
 
 ### Adicionado (épico Experiência de IA — ver docs/design/ai-experience.md)
 

@@ -27,7 +27,8 @@ class OpenAICompatibleProvider(AIProviderBase):
         self.daily_quota_markers = daily_quota_markers
         self.supports_stream = True
 
-    async def complete(self, prompt: str, model: str, api_key: str | None = None) -> str:
+    async def complete(self, prompt: str, model: str, api_key: str | None = None,
+                       base_url: str | None = None) -> str:
         if self.requires_key and not api_key:
             # o chain executor pula provedores sem chave ANTES de chamar;
             # isso é rede de segurança
@@ -42,7 +43,7 @@ class OpenAICompatibleProvider(AIProviderBase):
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                 response = await client.post(
-                    f"{self.base_url.rstrip('/')}/chat/completions",
+                    f"{(base_url or self.base_url).rstrip('/')}/chat/completions",
                     json=payload,
                     headers=headers,
                 )
@@ -71,7 +72,8 @@ class OpenAICompatibleProvider(AIProviderBase):
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()
 
-    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None):
+    async def complete_stream(self, prompt: str, model: str, api_key: str | None = None,
+                              base_url: str | None = None):
         """Streaming SSE do provedor: yields de delta.content.
 
         Erros ANTES do primeiro token viram ProviderCallError (o chain pode
@@ -88,7 +90,7 @@ class OpenAICompatibleProvider(AIProviderBase):
         try:
             async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
                 async with client.stream(
-                    "POST", f"{self.base_url.rstrip('/')}/chat/completions",
+                    "POST", f"{(base_url or self.base_url).rstrip('/')}/chat/completions",
                     json=payload, headers=headers,
                 ) as response:
                     if response.status_code != 200:

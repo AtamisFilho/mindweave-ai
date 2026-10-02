@@ -39,3 +39,7 @@ def init_db():
             "CREATE VIRTUAL TABLE IF NOT EXISTS node_index USING fts5("
             "node_id UNINDEXED, map_id UNINDEXED, node_text)"
         ))
+        # migração idempotente v0.6.1: base_url por provedor na cadeia
+        cols = conn.execute(text("PRAGMA table_info(provider_chain)")).fetchall()
+        if cols and not any(c[1] == "base_url" for c in cols):
+            conn.execute(text("ALTER TABLE provider_chain ADD COLUMN base_url VARCHAR"))
