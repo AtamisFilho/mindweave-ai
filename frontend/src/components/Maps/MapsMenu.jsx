@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import useMindMapStore from '../../store/mindMapStore';
-import { listMaps, searchNodesApi } from '../../services/api';
+import { listMaps, searchNodesApi, exportMapMarkdown } from '../../services/api';
+import { toast } from 'sonner';
 import GenerateMapModal from './GenerateMapModal';
 
 const relTime = (iso) => {
@@ -17,13 +18,14 @@ const relTime = (iso) => {
 // Menu discreto de mapas: busca FTS5 no topo (debounce 300ms) filtra a lista
 // e mostra os nós que casaram; "＋ Novo mapa" e exclusão com Undo vivem aqui.
 const MapsMenu = () => {
-  const { currentMapId, createNewMap, loadMap, deleteMapWithUndo, summarizeMap, chatState } = useMindMapStore(useShallow((state) => ({
+  const { currentMapId, createNewMap, loadMap, deleteMapWithUndo, summarizeMap, chatState, nodeCount } = useMindMapStore(useShallow((state) => ({
     currentMapId: state.currentMapId,
     createNewMap: state.createNewMap,
     loadMap: state.loadMap,
     deleteMapWithUndo: state.deleteMapWithUndo,
     summarizeMap: state.summarizeMap,
     chatState: state.chatState,
+    nodeCount: state.nodes.length, // export desabilitado com ≤1 nó
   })));
 
   const [open, setOpen] = useState(false);
@@ -77,6 +79,23 @@ const MapsMenu = () => {
     refresh();
   };
 
+  const handleExportMarkdown = async () => {
+    if (!currentMapId || nodeCount <= 1) return;
+    setOpen(false);
+    try {
+      const { blob, filename } = await exportMapMarkdown(currentMapId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exportado: ${filename}`);
+    } catch {
+      toast.error('Falha ao exportar o mapa.');
+    }
+  };
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -113,6 +132,20 @@ const MapsMenu = () => {
           >
             📄 Resumir mapa
           </button>
+
+          <div className="border-t border-gray-100 dark:border-gray-700 pt-1 mt-1">
+            <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-gray-400">Exportar</p>
+            <button
+              onClick={handleExportMarkdown}
+              disabled={!currentMapId || nodeCount <= 1}
+              className="w-full text-left px-3 pb-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={nodeCount <= 1
+                ? 'Adicione nós ao mapa antes de exportar'
+                : 'Baixa o mapa como outline Markdown (.md) — a mesma estrutura que a IA usa no chat'}
+            >
+              ⬇ Markdown (.md)
+            </button>
+          </div>
 
           <div className="px-3 pb-2">
             <input

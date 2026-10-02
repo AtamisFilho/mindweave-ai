@@ -25,6 +25,8 @@ import { nanoid } from 'nanoid';
 import { computeLayout } from '../layout/engine';
 
 const CHAT_HISTORY_LIMIT = 40; // teto de mensagens persistidas em meta.chat
+const RESEARCH_HISTORY_LIMIT = 40; // teto de pesquisas persistidas em meta.research (v0.6.0 B2.5)
+const RESEARCH_SUMMARY_LIMIT = 4000; // teto por resumo (bounda o blob do documento)
 
 // Undo/redo (v0.6.0): snapshots por referência {nodes, edges, layoutMeta}.
 // Teto de 50 entradas; a decisão de empilhar é por TIPO DE AÇÃO (ver doc
@@ -454,7 +456,9 @@ const useMindMapStore = create((set, get) => ({
       const entry = {
         id: `${Date.now()}-${researchData.nodeId}`,
         nodeId: researchData.nodeId,
-        summary,
+        // teto por entrada: o diário persiste em meta.research — um resumo
+        // gigante não pode inflar o blob do documento sem bound
+        summary: summary.slice(0, RESEARCH_SUMMARY_LIMIT),
         createdAt: Date.now(),
       };
       set((s) => ({
@@ -599,7 +603,8 @@ const useMindMapStore = create((set, get) => ({
       saveState: 'saved',
       layoutMeta: map.document.meta?.layout ?? { schema: 'balanced-lr', edgeType: null, compact: false },
       chat: map.document.meta?.chat ?? [],
-      researchHistory: [],
+      // diário intelectual: hidrata do documento (B2.5) — morria no F5
+      researchHistory: map.document.meta?.research ?? [],
       researchPanelNodeId: null,
       undoStack: [], // mapa novo: undo/redo de sessão não atravessa mapas
       redoStack: [],
@@ -614,6 +619,8 @@ const useMindMapStore = create((set, get) => ({
         layout: s.layoutMeta,
         // teto do histórico: as 40 últimas trocas (~32KB) persistem
         chat: s.chat.slice(-CHAT_HISTORY_LIMIT),
+        // diário de pesquisas (B2.5): 40 entradas, resumo já podado na criação
+        research: s.researchHistory.slice(-RESEARCH_HISTORY_LIMIT),
       },
     };
   },
@@ -1003,7 +1010,11 @@ const useMindMapStore = create((set, get) => ({
         currentMapId: created.id,
         mapVersion: created.version,
         layoutMeta: { schema: 'balanced-lr', edgeType: null, compact: false },
-        chat: [], researchHistory: [], researchPanelNodeId: null,
+        // mapa NOVO nasce vazio, mas hidrata do documento criado (mesma
+        // regra do _applyServerMap — B2.5: nada de zerar calado)
+        chat: created.document?.meta?.chat ?? [],
+        researchHistory: created.document?.meta?.research ?? [],
+        researchPanelNodeId: null,
         aiLoading: false, generatingMap: false,
         lastProviderUsed: result.provider_used ?? null,
         undoStack: [], redoStack: [], // mapa NOVO: história de sessão não atravessa
@@ -1087,7 +1098,8 @@ useMindMapStore.subscribe((state, prev) => {
     state.nodes !== prev.nodes ||
     state.edges !== prev.edges ||
     state.mapTitle !== prev.mapTitle ||
-    state.chat !== prev.chat
+    state.chat !== prev.chat ||
+    state.researchHistory !== prev.researchHistory // B2.5: done de pesquisa dispara o save sem tocar no grafo
   ) {
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {

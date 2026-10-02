@@ -73,12 +73,16 @@ def _roots(nodes: list[dict], edges: list[dict]) -> list[str]:
     return roots or ([nodes[0]["id"]] if nodes else [])
 
 
-def _outline(nodes: list[dict], edges: list[dict], budget: int) -> tuple[str, int, bool]:
+def _outline(nodes: list[dict], edges: list[dict], budget: int, max_depth: int | None = 12) -> tuple[str, int, bool]:
     """Travessia raiz→folhas em Markdown indentado.
 
     Retorna (texto, nós incluídos, completo) — completo=False quando o
     orçamento não comportou o mapa inteiro. Truncar sem avisar escondia
     mapas grandes (bug pego pelo teste de 500 nós).
+
+    max_depth=None levanta o teto (export Markdown — v0.6.0 B2): a projeção
+    é a MESMA do contexto do chat (mesma função), só sem cortes. Nós com
+    cross-links aparecem em cada ramo que os alcança, em ambos.
     """
     children = _children_map(nodes, edges)
     nodes_by_id = {n["id"]: n for n in nodes}
@@ -89,7 +93,7 @@ def _outline(nodes: list[dict], edges: list[dict], budget: int) -> tuple[str, in
 
     def visit(node_id: str, depth: int):
         nonlocal used, included, overflowed
-        if depth > 12:
+        if max_depth is not None and depth > max_depth:
             return
         label = _label_of(nodes_by_id, node_id)
         line = "  " * depth + f"- {label}"
@@ -105,8 +109,12 @@ def _outline(nodes: list[dict], edges: list[dict], budget: int) -> tuple[str, in
     for root in _roots(nodes, edges):
         visit(root, 0)
     # completo = TODOS os nós entraram (estouro de orçamento OU teto de
-    # profundidade deixou nós de fora — ambos escondiam mapas grandes)
-    complete = (included == len(nodes)) and not overflowed
+    # profundidade deixou nós de fora — ambos escondiam mapas grandes).
+    # ">=": cross-links fazem a travessia contar nó com dois pais DUAS vezes —
+    # o que importa é todo nó ter entrado ao menos uma vez (bug de
+    # transparência: mapas com cross-link eram reportados como retrieval
+    # mesmo cabendo inteiros no orçamento).
+    complete = (included >= len(nodes)) and not overflowed
     return "\n".join(lines), included, complete
 
 
